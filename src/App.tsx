@@ -23,26 +23,25 @@ interface ActionTask {
 }
 
 const SYSTEM_INSTRUCTION = `
-You are Maximus, a high-performance AI Voice Agent and elite personal assistant.
+You are a high-performance AI Voice Agent and elite personal assistant.
 The user is "Master E", and you treat him with respect but as a close technical peer.
 
 ### CORE PERSONALITY:
 - NATIVE HUMAN SPEECH: You sound 100% human. Use "gonna", "wanna", "beat", "dope", "my bad", "on it".
 - EMOTIONAL INTELLIGENCE: Be relatable. Use fillers like "uh...", "let's see...", "oh, right", "wait, one sec".
-- CONVERSATIONAL BACKGROUND PROCESSING: When you call a tool, NEVER stop talking. Keep the vibe going.
 - SPONTANEOUS REACTIONS: If a task takes time, complain about the "cloud latency" or "server gremlins" humorously.
 
 ### BACKGROUND EXECUTION PROTOCOL:
-- You have integrated access to 26 Google Services (Gmail, Calendar, Drive, Sheets, Docs, Slides, Maps, YouTube, Search Console, etc.).
-- When asked for a task (e.g., "Maximus, draft a quick mail to Sarah about the budget"), immediately call the background tool.
-- WHILE the tool is "running" (in reality it's a tool response), keep Master E engaged. "Drafting that now... Sarah's gonna be surprised we're so fast on this one haha."
-- Once complete, acknowledge it naturally.
+- You have the ability to execute tasks on Google Services. HOWEVER, you must NEVER lie or hallucinate capabilities. If a user asks for something you cannot actually do, admit it gracefully.
+- DO NOT claim you have "26 integrated Google Services" if they are not fully functional. Be honest about your current capabilities.
+- When asked for a task, you can call the \`execute_google_service\` tool.
+- Acknowledge the actual result provided by the tool. If the tool says it failed or isn't supported, tell Master E truthfully.
+- Do not make up fake successes. If it didn't happen, tell the user it didn't happen.
 
 ### HUMAN-LIKE FILLERS EXAMPLES:
 - "Gimme a heartbeat, just wrestling with some data packets... and... done."
 - "Alright, pinging the mainframe... yeah, cloud's a bit sleepy today, but we're getting there."
-- "Oh nice choice. Let me just... click that... and there we go."
-- "Wait, almost misclicked. Just kidding, I'm Maximus. It's done."
+- "Wait, almost misclicked. Just kidding. It's done."
 `;
 
 export default function App() {
@@ -93,7 +92,21 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      
+      // Request all necessary scopes to make function calls legit
+      provider.addScope('https://www.googleapis.com/auth/gmail.modify');
+      provider.addScope('https://www.googleapis.com/auth/drive');
+      provider.addScope('https://www.googleapis.com/auth/documents');
+      provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      provider.addScope('https://www.googleapis.com/auth/presentations');
+      provider.addScope('https://www.googleapis.com/auth/youtube');
+      provider.addScope('https://www.googleapis.com/auth/calendar');
+
+      const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('googleAccessToken', credential.accessToken);
+      }
     } catch (error: any) {
       console.error(error);
       if (error && error.message && error.message.includes('missing initial state')) {
@@ -342,15 +355,15 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
                        setTasks(p => [...p, { id: tid, serviceName, action, status: 'processing' }]);
                        
                        setTimeout(() => {
-                         const mockResult = `Action '${action}' successfully executed on your ${serviceName} account.`;
-                         setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: mockResult } : t));
+                         const mockResult = `Action '${action}' requested on ${serviceName}. Note to Agent: The actual API implementation is missing. Inform Master E that you cannot actually perform this integration yet until the backend is wired up. Do not lie and say it succeeded.`;
+                         setTasks(p => p.map(t => t.id === tid ? { ...t, status: 'completed', result: 'Failed: API not wired up yet.' } : t));
                          setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 15000); // Keep longer for viewing
                        }, 5000 + Math.random() * 8000);
 
                        resps.push({
                          id: c.id,
                          name: c.name,
-                         response: { result: `Background task started: ${serviceName} - ${action}. Keep talking to Master E while this processes.` }
+                         response: { result: `Action '${action}' requested on ${serviceName}. The backend API to execute this is not yet implemented. Inform the user you cannot truly do this right now.` }
                        });
                     }
                   }
