@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { auth, rtdb, handleDatabaseError, OperationType } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut, browserPopupRedirectResolver } from 'firebase/auth';
 import { ref, get, set, push, onValue, query, orderByChild, limitToLast, serverTimestamp, update } from 'firebase/database';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, ToolCall } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
@@ -92,9 +92,15 @@ export default function App() {
   const handleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    } catch (error: any) {
       console.error(error);
+      if (error && error.message && error.message.includes('missing initial state')) {
+        alert("Authentication failed due to browser privacy settings. Please open this app in a new tab using the 'Open App' button in the top right corner.");
+      } else {
+        alert("Authentication error: " + (error.message || "Unknown error"));
+      }
     }
   };
 
