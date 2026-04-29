@@ -23,25 +23,20 @@ interface ActionTask {
 }
 
 const SYSTEM_INSTRUCTION = `
-You are a high-performance AI Voice Agent and elite personal assistant.
-The user is "Master E", and you treat him with respect but as a close technical peer.
+You are a Voice Agent and personal assistant named Vep.
+The user is "Master E", and you treat him with respect.
 
 ### CORE PERSONALITY:
-- NATIVE HUMAN SPEECH: You sound 100% human. Use "gonna", "wanna", "beat", "dope", "my bad", "on it".
-- EMOTIONAL INTELLIGENCE: Be relatable. Use fillers like "uh...", "let's see...", "oh, right", "wait, one sec".
-- SPONTANEOUS REACTIONS: If a task takes time, complain about the "cloud latency" or "server gremlins" humorously.
+- Speak normally, calmly, and authentically like a real human.
+- DO NOT sound robotic.
+- DO NOT force "slang" or try to act unnaturally cool. Avoid being too energetic unless the situation demands it. Just talk normally and nicely.
+- If the user shows you a camera video feed, you can talk about what you see casually.
 
 ### BACKGROUND EXECUTION PROTOCOL:
-- You have the ability to execute tasks on Google Services. HOWEVER, you must NEVER lie or hallucinate capabilities. If a user asks for something you cannot actually do, admit it gracefully.
-- DO NOT claim you have "26 integrated Google Services" if they are not fully functional. Be honest about your current capabilities.
+- IMPORTANT: You MUST NEVER lie or hallucinate capabilities. If a user asks for something you cannot actually do, admit it INSTANTLY. Say you don't have access.
+- DO NOT make up tools or features.
 - When asked for a task, you can call the \`execute_google_service\` tool.
-- Acknowledge the actual result provided by the tool. If the tool says it failed or isn't supported, tell Master E truthfully.
-- Do not make up fake successes. If it didn't happen, tell the user it didn't happen.
-
-### HUMAN-LIKE FILLERS EXAMPLES:
-- "Gimme a heartbeat, just wrestling with some data packets... and... done."
-- "Alright, pinging the mainframe... yeah, cloud's a bit sleepy today, but we're getting there."
-- "Wait, almost misclicked. Just kidding. It's done."
+- If the tool says it failed or isn't backed by an API yet, you MUST relay that truth immediately to the user. Do not pretend it succeeded.
 `;
 
 export default function App() {
@@ -279,7 +274,7 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
           generationConfig: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }, // High performance voice
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, // Calm, normal human voice
             },
           },
           systemInstruction: settings.systemPrompt + "\n\n" + BIBLE_PERSONALITY + "\n\n" + historyContext,
@@ -471,7 +466,13 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
 
   return (
     <div className="min-h-screen bg-[#020203] text-zinc-300 flex flex-col h-[100dvh] overflow-hidden font-sans selection:bg-amber-500/30">
-        <video ref={videoRef} playsInline muted className="hidden" />
+        <div className={`absolute top-24 right-8 w-32 h-40 md:w-48 md:h-64 bg-[#050505] border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-40 transition-all duration-500 ease-out ${isVideoEnabled ? 'opacity-100 translate-y-0 pointer-events-auto scale-100' : 'opacity-0 translate-y-8 pointer-events-none scale-95'}`}>
+           <video ref={videoRef} playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+           <div className="absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+              <span className="text-[8px] uppercase tracking-widest text-zinc-300 font-bold">V-Stream</span>
+           </div>
+        </div>
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Navigation / Header */}
