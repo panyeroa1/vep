@@ -272,7 +272,9 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
     setConnecting(true);
     
     try {
-      await audioStreamerRef.current?.init(24000);
+      if (audioStreamerRef.current) {
+        await audioStreamerRef.current.init(24000);
+      }
       
       const sessionPromise = aiRef.current.live.connect({
         model: "gemini-2.0-flash-exp",
