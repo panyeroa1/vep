@@ -11,6 +11,9 @@ export class AudioStreamer {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate,
     });
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
   }
 
   addPCM16(base64: string) {
@@ -21,10 +24,11 @@ export class AudioStreamer {
     for (let i = 0; i < binary.length; i++) {
         view.setUint8(i, binary.charCodeAt(i));
     }
-    const int16Array = new Int16Array(buffer);
-    const float32Array = new Float32Array(int16Array.length);
-    for (let i = 0; i < int16Array.length; i++) {
-        float32Array[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
+    const int16Length = buffer.byteLength / 2;
+    const float32Array = new Float32Array(int16Length);
+    for (let i = 0; i < int16Length; i++) {
+        const int16 = view.getInt16(i * 2, true);
+        float32Array[i] = int16 / (int16 < 0 ? 0x8000 : 0x7FFF);
     }
     this.queue.push(float32Array);
     if (!this.isPlaying) {
@@ -86,6 +90,9 @@ export class AudioRecorder {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate: 16000
     });
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const source = this.audioContext.createMediaStreamSource(this.stream);
     
