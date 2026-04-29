@@ -278,7 +278,7 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
           generationConfig: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }, // Calm, normal human voice
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } }, // Best human normal voice for Male
             },
           },
           systemInstruction: settings.systemPrompt + "\n\n" + BIBLE_PERSONALITY + "\n\n" + historyContext,
@@ -485,10 +485,6 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
              <button onClick={() => setShowSidebar(true)} className="p-2 -ml-2 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-zinc-400 hover:text-white">
                 <Menu className="w-5 h-5" />
              </button>
-             <div className="flex flex-col">
-               <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500 font-bold leading-none mb-1">Vep Agent // {settings.personaName}</span>
-               <h1 className="text-sm font-medium tracking-wide text-zinc-100 uppercase">{user.displayName || 'Master E'}</h1>
-             </div>
           </div>
           
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
@@ -589,31 +585,23 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
            </div>
 
            {/* Transcription Overlay */}
-           <div className="mt-16 h-20 w-full max-w-2xl px-6 flex flex-col items-center justify-center gap-2">
+           <div className="absolute bottom-[200px] left-0 right-0 w-full px-6 flex flex-col items-center justify-center pointer-events-none z-40">
              <AnimatePresence mode="wait">
-               {currentTranscript ? (
+               {currentTranscript && (
                  <motion.div
                    key={currentTranscript.role}
                    initial={{ opacity: 0, y: 10 }}
                    animate={{ opacity: 1, y: 0 }}
-                   exit={{ opacity: 0, scale: 0.95 }}
-                   className="text-center"
+                   exit={{ opacity: 0, y: 10 }}
+                   className="text-center max-w-2xl w-full bg-black/40 backdrop-blur-md border border-white/5 px-6 py-4 rounded-3xl shadow-xl"
                  >
-                   <span className={`text-[10px] uppercase tracking-[0.3em] font-bold mb-2 block ${currentTranscript.role === 'model' ? 'text-amber-500' : 'text-zinc-500'}`}>
-                      {currentTranscript.role === 'user' ? 'Transmission / Master E' : 'Response / Maximus'}
+                   <span className={`text-[10px] uppercase tracking-[0.3em] font-bold mb-1 block ${currentTranscript.role === 'model' ? 'text-amber-500' : 'text-zinc-500'}`}>
+                      {currentTranscript.role === 'user' ? 'You' : settings.personaName}
                    </span>
-                   <p className={`text-xl md:text-2xl font-light tracking-tight leading-snug drop-shadow-sm ${currentTranscript.role === 'model' ? 'text-zinc-100 font-serif italic' : 'text-zinc-400'}`}>
+                   <p className={`text-lg md:text-xl font-light tracking-tight leading-snug drop-shadow-sm ${currentTranscript.role === 'model' ? 'text-zinc-100 font-serif' : 'text-zinc-300'}`}>
                      {currentTranscript.text}
                    </p>
                  </motion.div>
-               ) : (
-                 <motion.p 
-                   initial={{ opacity: 0 }} 
-                   animate={{ opacity: 0.3 }} 
-                   className="text-[10px] uppercase tracking-[0.3em] font-bold text-zinc-600"
-                 >
-                   {isActive ? 'Listening for input...' : 'Awaiting System Initialization'}
-                 </motion.p>
                )}
              </AnimatePresence>
            </div>
@@ -754,7 +742,7 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
                     {historyMsgs.map((msg, i) => (
                       <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                         <span className="text-[8px] uppercase tracking-widest text-zinc-600 mb-1">{msg.role === 'user' ? 'Master E' : 'Maximus'}</span>
+                         <span className="text-[8px] uppercase tracking-widest text-zinc-600 mb-1">{msg.role === 'user' ? 'You' : settings.personaName}</span>
                          <div className={`p-3 rounded-2xl max-w-[90%] text-xs leading-relaxed ${msg.role === 'user' ? 'bg-amber-500/10 text-amber-100 border border-amber-500/20 rounded-tr-sm' : 'bg-white/5 text-zinc-300 border border-white/5 rounded-tl-sm'}`}>
                             {msg.text}
                          </div>
@@ -782,6 +770,9 @@ function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogou
                       <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Identity & Directives</p>
                    </div>
                    <div className="flex gap-2">
+                     <button onClick={onLogout} className="px-4 py-2 bg-red-500/10 text-red-500 text-xs font-bold uppercase tracking-widest rounded-xl hover:bg-red-500/20 active:scale-95 transition-all flex items-center gap-2">
+                        <LogOut className="w-4 h-4" /> Logout
+                     </button>
                      <button 
                        onClick={async () => {
                           const userRef = ref(rtdb, 'users/' + user.uid);
