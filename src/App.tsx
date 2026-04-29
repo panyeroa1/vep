@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { auth, rtdb, handleDatabaseError, OperationType } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { ref, get, set, push, onValue, query, orderByChild, limitToLast, serverTimestamp } from 'firebase/database';
+import { ref, get, set, push, onValue, query, orderByChild, limitToLast, serverTimestamp, update } from 'firebase/database';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, ToolCall } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
-import { Square, Loader2, Power, LogOut, Volume2, Command, Check } from 'lucide-react';
+import { BIBLE_PERSONALITY } from './lib/personality';
+import { Square, Loader2, Power, LogOut, Volume2, Command, Check, Menu, Mic, MicOff, Video, VideoOff, X, Save, Camera } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface ChatMessage {
@@ -47,6 +48,11 @@ The user is "Master E", and you treat him with respect but as a close technical 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState({
+    personaName: 'Maximus',
+    systemPrompt: 'You are Maximus, a high-performance AI Voice Agent...',
+    avatarUrl: ''
+  });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -56,12 +62,23 @@ export default function App() {
           const userRef = ref(rtdb, 'users/' + u.uid);
           const userSnap = await get(userRef);
           if (!userSnap.exists()) {
+            const initialSettings = {
+              personaName: 'Maximus',
+              systemPrompt: SYSTEM_INSTRUCTION,
+              avatarUrl: ''
+            };
             await set(userRef, {
               displayName: u.displayName || 'Master E',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-              settings: {}
+              settings: initialSettings
             });
+            setSettings(initialSettings);
+          } else {
+            const data = userSnap.val();
+            if (data.settings) {
+              setSettings(data.settings);
+            }
           }
         } catch (error) {
           handleDatabaseError(error, OperationType.CREATE, 'users');
@@ -116,9 +133,9 @@ export default function App() {
              </div>
           </motion.div>
           
-          <h1 className="text-5xl font-light tracking-tight mb-2 text-white">Maximus</h1>
+          <h1 className="text-5xl font-light tracking-tight mb-2 text-white">Vep</h1>
           <p className="text-zinc-500 text-center mb-10 leading-relaxed font-serif italic text-lg decoration-zinc-800">
-            The Elite Native Voice Agent for Master E.
+            Powered by Maximus Persona
           </p>
           
           <div className="w-full p-1 bg-white/5 rounded-full backdrop-blur-xl border border-white/10">
@@ -126,7 +143,7 @@ export default function App() {
               onClick={handleLogin}
               className="w-full bg-amber-500 text-black font-bold text-sm tracking-widest uppercase h-14 rounded-full hover:bg-amber-400 transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
             >
-              Initialize Identity
+              Initialize Vep Identity
             </button>
           </div>
           
@@ -141,17 +158,24 @@ export default function App() {
     );
   }
 
-  return <MaximusAgent user={user} onLogout={handleLogout} />;
+  return <MaximusAgent user={user} onLogout={handleLogout} initialSettings={settings} />;
 }
 
-function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) {
+function MaximusAgent({ user, onLogout, initialSettings }: { user: User, onLogout: () => void, initialSettings: any }) {
   const [isActive, setIsActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const [tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>("");
+  const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
   const [currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model', text: string } | null>(null);
   
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [settings, setSettings] = useState(initialSettings || { personaName: 'Maximus', systemPrompt: SYSTEM_INSTRUCTION, avatarUrl: '' });
+
   const aiRef = useRef<GoogleGenAI | null>(null);
   const sessionRef = useRef<any>(null);
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
@@ -159,6 +183,14 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
   const recognitionRef = useRef<any>(null);
   const transcriptRef = useRef<{text: string, role: 'user'|'model'} | null>(null);
   const transcriptTimeoutRef = useRef<any>(null);
+  const isMutedRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoIntervalRef = useRef<any>(null);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
     // Wake Lock
@@ -181,10 +213,13 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
     const historyRef = query(ref(rtdb, 'users/' + user.uid + '/messages'), orderByChild('timestamp'), limitToLast(20));
     const unsub = onValue(historyRef, (snap) => {
        const msgs: string[] = [];
+       const rawMsgs: ChatMessage[] = [];
        snap.forEach(child => {
           const m = child.val() as ChatMessage;
           msgs.push(`${m.role.toUpperCase()}: ${m.text}`);
+          rawMsgs.push(m);
        });
+       setHistoryMsgs(rawMsgs);
        if (msgs.length > 0) {
           setHistoryContext("Previous conversation for context memory:\n" + msgs.join("\n"));
        }
@@ -228,7 +263,7 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
               voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } }, // High performance voice
             },
           },
-          systemInstruction: SYSTEM_INSTRUCTION + "\n\n" + historyContext,
+          systemInstruction: settings.systemPrompt + "\n\n" + BIBLE_PERSONALITY + "\n\n" + historyContext,
           tools: [{
             functionDeclarations: [
                {
@@ -280,6 +315,7 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
              } catch (e) {}
 
              audioRecorderRef.current = new AudioRecorder((base64) => {
+               if (isMutedRef.current) return;
                sessionPromise.then(s => s.sendRealtimeInput({
                  audio: { data: base64, mimeType: 'audio/pcm;rate=16000' }
                }));
@@ -353,11 +389,62 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
     }
   };
 
+  const toggleVideo = async () => {
+    if (!isVideoEnabled) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+        
+        // Start streaming frames
+        videoIntervalRef.current = setInterval(() => {
+           if (!videoRef.current || !canvasRef.current || !sessionRef.current) return;
+           const v = videoRef.current;
+           const c = canvasRef.current;
+           const ctx = c.getContext('2d');
+           if (ctx && v.videoWidth > 0) {
+             c.width = v.videoWidth;
+             c.height = v.videoHeight;
+             ctx.drawImage(v, 0, 0, c.width, c.height);
+             const base64Url = c.toDataURL('image/jpeg', 0.5);
+             const base64Data = base64Url.split(',')[1];
+             if (base64Data) {
+               sessionRef.current.sendRealtimeInput({
+                 video: { data: base64Data, mimeType: 'image/jpeg' }
+               });
+             }
+           }
+        }, 1500); // 1.5 seconds per frame is safe for Live API to process
+        
+        setIsVideoEnabled(true);
+      } catch (e) {
+        console.error("Camera error:", e);
+      }
+    } else {
+      if (videoRef.current && videoRef.current.srcObject) {
+         const stream = videoRef.current.srcObject as MediaStream;
+         stream.getTracks().forEach((t) => t.stop());
+         videoRef.current.srcObject = null;
+      }
+      if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+      setIsVideoEnabled(false);
+    }
+  };
+
   const stopSession = () => {
     try { recognitionRef.current?.stop(); } catch (e) {}
     audioRecorderRef.current?.stop();
     audioStreamerRef.current?.stop();
     sessionRef.current?.close();
+    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    if (videoRef.current && videoRef.current.srcObject) {
+       const stream = videoRef.current.srcObject as MediaStream;
+       stream.getTracks().forEach((t) => t.stop());
+       videoRef.current.srcObject = null;
+    }
+    setIsVideoEnabled(false);
     setIsActive(false);
     setConnecting(false);
     setCurrentTranscript(null);
@@ -365,20 +452,31 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
 
   return (
     <div className="min-h-screen bg-[#020203] text-zinc-300 flex flex-col h-[100dvh] overflow-hidden font-sans selection:bg-amber-500/30">
+        <video ref={videoRef} playsInline muted className="hidden" />
+        <canvas ref={canvasRef} className="hidden" />
+
         {/* Navigation / Header */}
         <header className="px-8 py-6 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 backdrop-blur-md z-50">
-          <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-                <Volume2 className="w-4 h-4 text-amber-500" />
-             </div>
+          <div className="flex items-center gap-4">
+             <button onClick={() => setShowSidebar(true)} className="p-2 -ml-2 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-zinc-400 hover:text-white">
+                <Menu className="w-5 h-5" />
+             </button>
              <div className="flex flex-col">
-               <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500 font-bold leading-none mb-1">Maximus V-System</span>
+               <span className="text-[9px] uppercase tracking-[0.3em] text-zinc-500 font-bold leading-none mb-1">Vep Agent // {settings.personaName}</span>
                <h1 className="text-sm font-medium tracking-wide text-zinc-100 uppercase">{user.displayName || 'Master E'}</h1>
              </div>
           </div>
           
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+              {isActive && (
+                 <span className={`text-[10px] uppercase tracking-[0.2em] px-3 py-1 rounded-full border ${isAgentSpeaking ? 'border-amber-500/50 text-amber-500 bg-amber-500/10' : 'border-emerald-500/50 text-emerald-500 bg-emerald-500/10'}`}>
+                    {isAgentSpeaking ? 'Speaking...' : 'Listening...'}
+                 </span>
+              )}
+          </div>
+
           <div className="flex items-center gap-6">
-             <div className="flex flex-col items-end mr-2">
+             <div className="flex flex-col items-end mr-2 hidden sm:flex">
                 <span className="text-[9px] uppercase tracking-widest text-zinc-600 font-bold">System Status</span>
                 <span className={`text-[10px] font-mono flex items-center gap-1.5 ${isActive ? 'text-amber-500' : 'text-zinc-600'}`}>
                    {isActive ? (
@@ -386,8 +484,13 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
                    ) : 'Standby'}
                 </span>
              </div>
-             <button onClick={onLogout} className="p-2 rounded-xl hover:bg-white/5 transition-all text-zinc-600 hover:text-white">
-               <LogOut className="w-5 h-5" />
+             
+             <button onClick={() => setShowProfile(true)} className="w-10 h-10 rounded-full border border-white/10 overflow-hidden hover:border-amber-500/50 transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/50">
+               {settings.avatarUrl || user.photoURL ? (
+                  <img src={settings.avatarUrl || user.photoURL || ''} alt="Profile" className="w-full h-full object-cover" />
+               ) : (
+                  <div className="w-full h-full bg-zinc-800 flex items-center justify-center font-bold">{user.displayName?.[0] || 'U'}</div>
+               )}
              </button>
           </div>
         </header>
@@ -492,7 +595,18 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
            </div>
 
            {/* Trigger / Controls */}
-           <div className="absolute bottom-32 left-0 right-0 flex flex-col items-center gap-6">
+           <div className="absolute bottom-32 left-0 right-0 flex items-center justify-center gap-8">
+              {/* Mic Sub-button */}
+              <button 
+                onClick={() => setIsMuted(p => !p)}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
+                   isMuted ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                }`}
+              >
+                 {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+
+              {/* Main Power */}
               {!isActive ? (
                 <button 
                   onClick={startSession}
@@ -515,6 +629,16 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
                   </div>
                 </button>
               )}
+
+              {/* Video Sub-button */}
+              <button 
+                onClick={toggleVideo}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
+                   isVideoEnabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                }`}
+              >
+                 {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+              </button>
            </div>
            
            {/* Dynamic Background Tasks / HUD */}
@@ -572,7 +696,7 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
         </main>
         
         {/* Footer Meta */}
-        <footer className="px-8 py-4 border-t border-white/5 bg-[#050505] flex items-center justify-between text-[8px] uppercase tracking-[0.4em] text-zinc-700 font-bold">
+        <footer className="px-8 py-4 border-t border-white/5 bg-[#050505] flex items-center justify-between text-[8px] uppercase tracking-[0.4em] text-zinc-700 font-bold z-10">
            <span>Model: Gemini 3.1 Flash Live</span>
            <div className="flex gap-4">
               <span>Latency: Optmzd</span>
@@ -580,6 +704,147 @@ function MaximusAgent({ user, onLogout }: { user: User, onLogout: () => void }) 
               <span>Mem: RTDB-Active</span>
            </div>
         </footer>
+
+        {/* --- History Sidebar Overlay --- */}
+        <AnimatePresence>
+          {showSidebar && (
+             <>
+               <motion.div 
+                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                 onClick={() => setShowSidebar(false)}
+                 className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+               />
+               <motion.div 
+                 initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                 className="fixed top-0 left-0 bottom-0 w-80 bg-[#0A0A0B] border-r border-white/10 shadow-2xl z-[101] flex flex-col font-sans"
+               >
+                 <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-bold text-white tracking-widest uppercase">Memory Log</h2>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Context Buffer</p>
+                    </div>
+                    <button onClick={() => setShowSidebar(false)} className="p-2 -mr-2 rounded-xl hover:bg-white/5 text-zinc-500 hover:text-white transition-colors">
+                      <X className="w-5 h-5" />
+                    </button>
+                 </div>
+                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {historyMsgs.map((msg, i) => (
+                      <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                         <span className="text-[8px] uppercase tracking-widest text-zinc-600 mb-1">{msg.role === 'user' ? 'Master E' : 'Maximus'}</span>
+                         <div className={`p-3 rounded-2xl max-w-[90%] text-xs leading-relaxed ${msg.role === 'user' ? 'bg-amber-500/10 text-amber-100 border border-amber-500/20 rounded-tr-sm' : 'bg-white/5 text-zinc-300 border border-white/5 rounded-tl-sm'}`}>
+                            {msg.text}
+                         </div>
+                      </div>
+                    ))}
+                    {historyMsgs.length === 0 && (
+                       <div className="text-center text-zinc-600 text-[10px] tracking-widest uppercase py-10 font-bold">No Memory Buffers</div>
+                    )}
+                 </div>
+               </motion.div>
+             </>
+          )}
+        </AnimatePresence>
+
+        {/* --- Profile Fullscreen Overlay --- */}
+        <AnimatePresence>
+          {showProfile && (
+             <motion.div 
+               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+               className="fixed inset-0 bg-[#050505] z-[200] overflow-y-auto font-sans flex flex-col"
+             >
+                <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-10 w-full max-w-2xl mx-auto">
+                   <div>
+                      <h2 className="text-sm font-bold text-white tracking-widest uppercase">System Settings</h2>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Identity & Directives</p>
+                   </div>
+                   <div className="flex gap-2">
+                     <button 
+                       onClick={async () => {
+                          const userRef = ref(rtdb, 'users/' + user.uid);
+                          await update(userRef, { settings, updatedAt: serverTimestamp() });
+                          setShowProfile(false);
+                       }} 
+                       className="px-4 py-2 bg-amber-500 text-black text-xs font-bold uppercase tracking-widest rounded-xl hover:bg-amber-400 active:scale-95 transition-all flex items-center gap-2"
+                     >
+                        <Save className="w-4 h-4" /> Save
+                     </button>
+                     <button onClick={() => setShowProfile(false)} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
+                       <X className="w-5 h-5" />
+                     </button>
+                   </div>
+                </div>
+
+                <div className="flex-1 w-full max-w-2xl mx-auto p-6 flex flex-col gap-8 pb-20">
+                   
+                   {/* Avatar Upload */}
+                   <div className="flex flex-col items-center gap-4">
+                      <div className="relative w-32 h-32 rounded-full border-2 border-white/10 bg-zinc-900 overflow-hidden flex items-center justify-center group">
+                         {settings.avatarUrl || user.photoURL ? (
+                           <img src={settings.avatarUrl || user.photoURL || ''} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                         ) : (
+                           <div className="text-4xl text-zinc-700 font-bold">{user.displayName?.[0] || 'U'}</div>
+                         )}
+                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            <Camera className="w-8 h-8 text-white drop-shadow-md" />
+                         </div>
+                         <input 
+                           type="file" accept="image/*"
+                           className="absolute inset-0 opacity-0 cursor-pointer"
+                           onChange={(e) => {
+                             const file = e.target.files?.[0];
+                             if (!file) return;
+                             const reader = new FileReader();
+                             reader.onload = (ev) => {
+                               const img = new Image();
+                               img.onload = () => {
+                                  const c = document.createElement('canvas');
+                                  c.width = 150; c.height = 150;
+                                  const ctx = c.getContext('2d');
+                                  if (!ctx) return;
+                                  ctx.drawImage(img, 0, 0, 150, 150);
+                                  setSettings(s => ({ ...s, avatarUrl: c.toDataURL('image/jpeg', 0.8) }));
+                               };
+                               img.src = ev.target?.result as string;
+                             };
+                             reader.readAsDataURL(file);
+                           }}
+                         />
+                      </div>
+                      <div className="text-center">
+                         <h3 className="text-xs uppercase tracking-widest font-bold text-zinc-300">Avatar Node</h3>
+                         <p className="text-[10px] text-zinc-600 mt-1">Tap to re-configure</p>
+                      </div>
+                   </div>
+
+                   {/* Text Fields */}
+                   <div className="space-y-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">Persona Designation</label>
+                        <input 
+                          type="text" 
+                          value={settings.personaName}
+                          onChange={(e) => setSettings(s => ({ ...s, personaName: e.target.value }))}
+                          className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl p-4 text-white font-serif text-xl focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all"
+                          placeholder="e.g. Maximus"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2 flex-1 flex flex-col">
+                        <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">System Directives</label>
+                        <textarea 
+                          value={settings.systemPrompt}
+                          onChange={(e) => setSettings(s => ({ ...s, systemPrompt: e.target.value }))}
+                          className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl p-4 text-zinc-300 font-mono text-xs leading-relaxed focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all min-h-[300px] resize-y"
+                          placeholder="You are Maximus..."
+                        />
+                      </div>
+                   </div>
+
+                </div>
+             </motion.div>
+          )}
+        </AnimatePresence>
+
     </div>
   );
 }
