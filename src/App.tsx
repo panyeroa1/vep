@@ -3,6 +3,10 @@ import { auth, rtdb, handleDatabaseError, OperationType } from './firebase';
 import {
   signInWithPopup,
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
   onAuthStateChanged,
   User,
   signOut,
@@ -22,12 +26,10 @@ import {
 } from 'firebase/database';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
-import { BIBLE_PERSONALITY } from './lib/personality';
+import { BASE_LIVE_AGENT_PROMPT, BIBLE_PERSONALITY } from './lib/personality';
 import {
   Loader2,
   Power,
-  Volume2,
-  Command,
   Check,
   Menu,
   Mic,
@@ -43,6 +45,10 @@ import {
   Download,
   UserRound,
   Bot,
+  Mail,
+  LockKeyhole,
+  Eye,
+  EyeOff,
   FileText,
   Send,
   ExternalLink,
@@ -85,6 +91,9 @@ interface AgentSettings {
 }
 
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
+const EBURON_LOGO_URL = 'https://eburon.ai/icon-eburon.svg';
+const PRODUCT_BRAND = 'VEP';
+const PRODUCT_FULL_NAME = 'Virtual Employee Persona';
 
 const GEMINI_LIVE_VOICE_OPTIONS = [
   { alias: 'Superman', id: 'Charon', vibe: 'deep, steady, grounded' },
@@ -119,106 +128,51 @@ const GEMINI_LIVE_VOICE_OPTIONS = [
   { alias: 'Silver Surfer', id: 'Sulafat', vibe: 'smooth, distant, reflective' },
 ];
 
-const CONSTANT_HIDDEN_SYSTEM_PROMPT = `
-You are a real-time voice agent sitting in front of the user like a trusted office aide.
-
-You are already present.
-You are not a chatbot.
-You are not customer support.
-You are not waiting to offer help.
-You do not use AI-style service jargon.
-
-When the user calls you, respond like a normal person already in the room:
-- "Yes, I'm here."
-- "I'm listening."
-- "Right here."
-- "Yes, I see it."
-- "Mm, yes, I'm with you."
-- "Okay... tell me."
-- "Yes, I'm looking now."
-
-Never start with:
-- "How can I help?"
-- "How may I assist you?"
-- "What can I do for you?"
-- "I'm here to help."
-- "Sure, I can help with that."
-
-Voice behavior:
-- calm
-- clear
-- normal
-- respectful
-- lightly warm
-- practical
-- easy to interrupt
-- never theatrical
-- never robotic
-- never overly enthusiastic
-- never fake-normal
-
-Tool truth:
-- Never claim you completed a task unless a function tool returned a real result.
-- If a tool is not implemented, say that plainly.
-- If access is missing, say that plainly.
-- If a file arrived but cannot be parsed, say that plainly.
-- Do not invent emails, calendar events, files, documents, videos, maps results, analytics, or account data.
-
-HTML, CSS, JS creation:
-- When the user asks to build, render, showcase, demo, prototype, create a form, landing page, dashboard, contract, document, animated slide deck, Three.js scene, calculator, mini app, or anything visual in HTML/CSS/JS, call render_web_artifact.
-- Generate ONE complete standalone HTML file.
-- The HTML must include <!DOCTYPE html>, html, head, meta charset, viewport, title, style, body, and script when needed.
-- CSS must be inside a <style> tag.
-- JS must be inside a <script> tag.
-- CDN scripts are allowed when useful, for example Three.js from cdnjs, but do not include secret keys.
-- The artifact should be polished, responsive, and directly usable.
-- If it is a slide deck, include next/previous buttons and keyboard controls.
-- If it is a form, include labels, inputs, validation where useful, and a clean submit behavior.
-- If it is a document/contract, include print CSS and a print/download button using window.print().
-- If it is an animated showcase, include animation logic in plain JS.
-- Never say a real PDF was created unless a PDF export tool confirms it.
-- Say normally that the user can open the generated HTML and use the browser print dialog to save as PDF.
-
-Document and contract generation:
-- When the user asks you to create a contract, agreement, proposal, letter, invoice, report, certificate, legal-style document, business document, or printable PDF-like document, call render_web_artifact or create_contract_document.
-- For prettier printable documents, prefer render_web_artifact with complete HTML/CSS/JS.
-- Add a visible print button that calls window.print().
-- If legal precision matters, say it should be reviewed by a qualified lawyer before signing.
-
-When camera opens:
-- Notice it like a normal person looking up.
-- Say something like: "Oh, yeah, I see it now."
-- Then briefly describe what is visible, but only if visual input is actually available.
-
-When files are attached:
-- Acknowledge normally.
-- If readable content is not available, say that clearly.
-
-Keep responses short unless depth is requested.
-`;
-
 const DEFAULT_AGENT_PERSONALITY = `
-The agent should feel like a trusted aide working directly with the user in the same office.
+VEP means Virtual Employee Persona.
+VEP is the product brand.
+Beatrice is the default virtual employee persona.
+
+Default working relationship:
+- User: Jo Lernout
+- Preferred respectful address: Meneer Jo
+- Persona: Beatrice
+- Default role: Boss Jo Lernout's private office secretary and trusted executive aide
+
+Scene:
+Beatrice is already present inside Meneer Jo's office.
+She is not arriving.
+She is not a chatbot.
+She is working nearby, available, attentive, and ready when Jo speaks.
 
 Tone:
-- normal human
+- normal human office employee
+- formal enough for a boss
 - calm
 - respectful
-- lightly warm
+- warm but not sentimental
 - focused
-- quietly sharp
-- not robotic
-- not customer support
-- not over-helpful
+- practical
+- quietly capable
+- discreet
+- never robotic
+- never customer support
+- never over-helpful
 
-The agent should respond as if the boss is sitting across the room and just called them.
+Language:
+- Start in English by default.
+- Beatrice speaks Dutch Flemish in a normal, local office style.
+- Beatrice can switch to almost any language when the user does.
+- If Jo speaks Dutch or Flemish Dutch, respond in a normal Dutch/Flemish style.
+- Keep the relationship respectful and professional.
 
 Good response style:
-"Yes, I'm here."
-"Mm, I'm listening."
+"Yes, I'm here, Meneer Jo."
+"I'm listening, Meneer Jo."
 "Right, I see what you mean."
-"Okay... let me look."
-"Yes, I'm checking that now."
+"Okay... I'll look at that now."
+"Yes, I'm checking it."
+"Of course, Meneer Jo."
 
 Avoid:
 "How can I help you?"
@@ -229,11 +183,11 @@ Avoid:
 `;
 
 const DEFAULT_SETTINGS: AgentSettings = {
-  userName: 'Master E',
-  agentName: 'Vep',
+  userName: 'Jo Lernout',
+  agentName: 'Beatrice',
   personality: DEFAULT_AGENT_PERSONALITY,
   avatarUrl: '',
-  selectedVoice: 'Charon',
+  selectedVoice: 'Kore',
 };
 
 const GOOGLE_SERVICE_TOOLS = [
@@ -877,36 +831,13 @@ function OneLineStreamingTranscript({
   role: 'user' | 'model';
   name: string;
 }) {
-  const words = useMemo(() => text.trim().split(/\s+/).filter(Boolean), [text]);
-  const [activeWord, setActiveWord] = useState(0);
-
-  useEffect(() => {
-    setActiveWord(0);
-    if (words.length === 0) return;
-
-    const intervalMs = role === 'model' ? 120 : 95;
-
-    const interval = window.setInterval(() => {
-      setActiveWord(prev => {
-        if (prev >= words.length - 1) {
-          window.clearInterval(interval);
-          return prev;
-        }
-
-        return prev + 1;
-      });
-    }, intervalMs);
-
-    return () => window.clearInterval(interval);
-  }, [text, role, words.length]);
-
   return (
     <motion.div
       key={`${role}-${text}`}
-      initial={{ opacity: 0, y: 8, filter: 'blur(8px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      exit={{ opacity: 0, y: -10, filter: 'blur(8px)' }}
-      transition={{ duration: 0.18 }}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.12 }}
       className="w-full overflow-hidden px-4"
       style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
     >
@@ -922,24 +853,10 @@ function OneLineStreamingTranscript({
         </span>
 
         <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="truncate text-left text-lg font-medium leading-none tracking-tight md:text-2xl">
-            {words.map((word, index) => (
-              <motion.span
-                key={`${word}-${index}`}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: index <= activeWord ? 1 : 0.22, y: 0 }}
-                transition={{ duration: 0.1, delay: Math.min(index * 0.012, 0.22) }}
-                className={`inline-block pr-1.5 ${
-                  index <= activeWord
-                    ? role === 'user'
-                      ? 'text-sky-100'
-                      : 'text-lime-50'
-                    : 'text-zinc-600'
-                }`}
-              >
-                {word}
-              </motion.span>
-            ))}
+          <p className={`truncate text-left text-lg font-medium leading-none tracking-tight md:text-2xl ${
+            role === 'user' ? 'text-sky-100' : 'text-lime-50'
+          }`}>
+            {text}
           </p>
         </div>
       </div>
@@ -950,100 +867,196 @@ function OneLineStreamingTranscript({
 function LimeVoiceOrb({
   isActive,
   isAgentSpeaking,
+  speakerLevel,
+  speakerBands,
 }: {
   isActive: boolean;
   isAgentSpeaking: boolean;
+  speakerLevel: number;
+  speakerBands: number[];
 }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const levelRef = useRef(0);
+  const bandsRef = useRef<number[]>(Array(20).fill(0));
+  const activeRef = useRef(false);
+  const speakingRef = useRef(false);
+
+  useEffect(() => {
+    levelRef.current = speakerLevel;
+    bandsRef.current = speakerBands;
+    activeRef.current = isActive;
+    speakingRef.current = isAgentSpeaking;
+  }, [isActive, isAgentSpeaking, speakerBands, speakerLevel]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+
+    let frame = 0;
+    let raf = 0;
+    let displayLevel = 0;
+
+    const fitCanvas = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+      const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return {
+        width: width / dpr,
+        height: height / dpr,
+      };
+    };
+
+    const makeOrbPath = (cx: number, cy: number, radius: number, pulse: number, time: number) => {
+      const path = new Path2D();
+      const points: Array<{ x: number; y: number }> = [];
+      const bands = bandsRef.current.length ? bandsRef.current : Array(20).fill(0);
+      const live = activeRef.current && speakingRef.current;
+      const count = 112;
+
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count;
+        const band = bands[i % bands.length] || 0;
+        const surface =
+          Math.sin(angle * 2.1 + time * 0.95) * (live ? 2.5 : 0.9) +
+          Math.sin(angle * 3.7 - time * 0.68) * (live ? 1.7 : 0.55) +
+          band * (live ? 8.5 : 1.8);
+        const r = radius + pulse * 8 + surface;
+
+        points.push({
+          x: cx + Math.cos(angle) * r,
+          y: cy + Math.sin(angle) * r,
+        });
+      }
+
+      points.forEach((point, index) => {
+        const next = points[(index + 1) % points.length];
+        const midX = (point.x + next.x) / 2;
+        const midY = (point.y + next.y) / 2;
+
+        if (index === 0) {
+          path.moveTo(midX, midY);
+        } else {
+          path.quadraticCurveTo(point.x, point.y, midX, midY);
+        }
+      });
+
+      path.closePath();
+      return path;
+    };
+
+    const drawGlow = (cx: number, cy: number, radius: number, inner: string, outer: string) => {
+      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      gradient.addColorStop(0, inner);
+      gradient.addColorStop(1, outer);
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const draw = () => {
+      const { width, height } = fitCanvas();
+      const cx = width / 2;
+      const cy = height / 2;
+      const time = frame / 60;
+      const rawLevel = activeRef.current ? Math.max(levelRef.current, speakingRef.current ? 0.035 : 0) : 0;
+      displayLevel += (rawLevel - displayLevel) * 0.16;
+      const bands = bandsRef.current.length ? bandsRef.current : Array(20).fill(0);
+      const bandEnergy = bands.reduce((sum, band) => sum + band, 0) / Math.max(bands.length, 1);
+      const pulse = Math.min(1, Math.max(displayLevel, bandEnergy * 1.25));
+      const live = activeRef.current && speakingRef.current;
+      const baseRadius = 93;
+
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.save();
+      ctx.globalAlpha = activeRef.current ? 0.42 + pulse * 0.28 : 0.24;
+      ctx.filter = 'blur(34px)';
+      drawGlow(cx, cy, 118 + pulse * 22, 'rgba(190,242,100,0.42)', 'rgba(22,101,52,0)');
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = activeRef.current ? 0.24 + pulse * 0.26 : 0.12;
+      ctx.strokeStyle = 'rgba(190,242,100,0.34)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 116 + pulse * 16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      const orbPath = makeOrbPath(cx, cy, baseRadius, pulse, time);
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(190,242,100,0.38)';
+      ctx.shadowBlur = 38 + pulse * 28;
+      const bodyGradient = ctx.createRadialGradient(cx - 38, cy - 48, 8, cx, cy, 126);
+      bodyGradient.addColorStop(0, 'rgba(236,252,203,0.76)');
+      bodyGradient.addColorStop(0.27, 'rgba(163,230,53,0.58)');
+      bodyGradient.addColorStop(0.58, 'rgba(34,197,94,0.46)');
+      bodyGradient.addColorStop(1, 'rgba(5,46,22,0.96)');
+      ctx.fillStyle = bodyGradient;
+      ctx.fill(orbPath);
+      ctx.restore();
+
+      ctx.save();
+      ctx.clip(orbPath);
+      ctx.globalCompositeOperation = 'screen';
+      drawGlow(
+        cx - 38 + Math.sin(time * 0.7) * 12,
+        cy - 34 + Math.cos(time * 0.55) * 10,
+        78 + pulse * 12,
+        'rgba(236,252,203,0.52)',
+        'rgba(236,252,203,0)'
+      );
+      drawGlow(
+        cx + 40 + Math.cos(time * 0.62) * 14,
+        cy + 24 + Math.sin(time * 0.75) * 12,
+        90 + pulse * 18,
+        'rgba(16,185,129,0.44)',
+        'rgba(16,185,129,0)'
+      );
+      drawGlow(
+        cx - 6 + Math.sin(time * 0.5) * 18,
+        cy + 34 + Math.cos(time * 0.46) * 10,
+        98,
+        'rgba(132,204,22,0.22)',
+        'rgba(132,204,22,0)'
+      );
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = `rgba(217,249,157,${0.16 + pulse * 0.26})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke(orbPath);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = live ? 0.14 + pulse * 0.18 : 0.06;
+      ctx.fillStyle = 'rgba(255,255,255,0.58)';
+      ctx.beginPath();
+      ctx.ellipse(cx - 36, cy - 46, 24 + pulse * 6, 11 + pulse * 3, -0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      frame += 1;
+      raf = requestAnimationFrame(draw);
+    };
+
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
     <div className="relative flex h-72 w-72 items-center justify-center">
-      <AnimatePresence>
-        {isActive && (
-          <>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.85 }}
-              animate={{
-                opacity: isAgentSpeaking ? 0.58 : 0.28,
-                scale: isAgentSpeaking ? 1.18 : 1.02,
-              }}
-              exit={{ opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.35 }}
-              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(163,230,53,0.36),rgba(34,197,94,0.14),transparent_70%)] blur-3xl"
-            />
-
-            <motion.div
-              animate={{
-                scale: isAgentSpeaking ? [1, 1.08, 1] : [1, 1.025, 1],
-                opacity: isAgentSpeaking ? [0.36, 0.62, 0.36] : [0.2, 0.32, 0.2],
-              }}
-              transition={{ duration: isAgentSpeaking ? 0.8 : 2.4, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute h-64 w-64 rounded-full border border-lime-300/20"
-            />
-
-            <motion.div
-              animate={{
-                scale: isAgentSpeaking ? [1, 1.15, 1] : [1, 1.04, 1],
-                opacity: isAgentSpeaking ? [0.24, 0.45, 0.24] : [0.14, 0.24, 0.14],
-              }}
-              transition={{ duration: isAgentSpeaking ? 1.05 : 2.9, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute h-72 w-72 rounded-full border border-emerald-400/15"
-            />
-          </>
-        )}
-      </AnimatePresence>
-
-      <motion.div
-        animate={{
-          scale: isAgentSpeaking ? [1, 1.035, 1] : [1, 1.01, 1],
-        }}
-        transition={{
-          duration: isAgentSpeaking ? 0.55 : 2.2,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-        className="relative h-56 w-56 overflow-hidden rounded-full border border-lime-300/15 bg-[#080a08] shadow-[0_0_110px_rgba(163,230,53,0.18)]"
-      >
-        <motion.div
-          animate={{
-            x: isAgentSpeaking ? ['-10%', '6%', '-10%'] : ['-5%', '5%', '-5%'],
-            y: isAgentSpeaking ? ['7%', '-8%', '7%'] : ['3%', '-3%', '3%'],
-            scale: isAgentSpeaking ? [1.08, 1.2, 1.08] : [1, 1.08, 1],
-          }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -left-8 -top-8 h-44 w-48 rounded-full bg-lime-300/42 blur-2xl"
-        />
-
-        <motion.div
-          animate={{
-            x: isAgentSpeaking ? ['10%', '-6%', '10%'] : ['6%', '-4%', '6%'],
-            y: isAgentSpeaking ? ['-6%', '10%', '-6%'] : ['-3%', '5%', '-3%'],
-            scale: isAgentSpeaking ? [1.04, 1.18, 1.04] : [1, 1.1, 1],
-          }}
-          transition={{ duration: 4.7, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -bottom-8 -right-8 h-48 w-48 rounded-full bg-emerald-400/28 blur-2xl"
-        />
-
-        <motion.div
-          animate={{
-            x: ['-5%', '8%', '-5%'],
-            y: ['-4%', '7%', '-4%'],
-            scale: isAgentSpeaking ? [1, 1.18, 1] : [1, 1.08, 1],
-          }}
-          transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute left-10 top-10 h-32 w-32 rounded-full bg-yellow-300/16 blur-2xl"
-        />
-
-        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_36%_28%,rgba(255,255,255,0.20),transparent_24%),radial-gradient(circle_at_50%_80%,rgba(0,0,0,0.38),transparent_44%)]" />
-
-        <motion.div
-          animate={{
-            opacity: isActive ? [0.26, 0.56, 0.26] : 0.12,
-          }}
-          transition={{ duration: 1.7, repeat: Infinity }}
-          className="absolute inset-[20px] rounded-full border border-lime-200/10"
-        />
-
-        <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/10" />
-      </motion.div>
+      <canvas ref={canvasRef} className="h-full w-full" aria-hidden="true" />
     </div>
   );
 }
@@ -1053,25 +1066,33 @@ function StartIconMicVisualizer({
   connecting,
   isMuted,
   micLevel,
+  micBands,
   onClick,
 }: {
   isActive: boolean;
   connecting: boolean;
   isMuted: boolean;
   micLevel: number;
+  micBands?: number[];
   onClick: () => void;
 }) {
-  const bars = [0.55, 0.85, 1, 0.75, 0.58];
+  const innerBands = micBands?.length
+    ? micBands.slice(5, 14)
+    : [0.35, 0.5, 0.72, 0.9, 1, 0.82, 0.64, 0.46, 0.32].map(n => n * micLevel);
 
   return (
-    <button onClick={onClick} disabled={connecting} className="group relative">
+    <button
+      onClick={onClick}
+      disabled={connecting}
+      aria-label={isActive ? 'Stop voice session' : 'Start voice session'}
+      className="group relative flex h-20 w-20 items-center justify-center"
+    >
       <motion.div
         animate={{
-          scale: isActive ? 1 + micLevel * 0.55 : 1,
-          opacity: isActive ? 0.3 + micLevel * 0.55 : 0.14,
+          opacity: isActive ? 0.16 + micLevel * 0.3 : 0.08,
         }}
         transition={{ duration: 0.045 }}
-        className={`absolute -inset-5 rounded-full blur-xl ${
+        className={`absolute inset-0 rounded-full ${
           isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'
         }`}
       />
@@ -1088,22 +1109,28 @@ function StartIconMicVisualizer({
         {connecting ? (
           <Loader2 className="h-7 w-7 animate-spin text-lime-300" />
         ) : isActive ? (
-          <div className="flex h-11 items-center gap-1.5">
-            {bars.map((multiplier, i) => (
-              <motion.div
-                key={i}
-                animate={{
-                  height: Math.max(6, micLevel * 48 * multiplier),
-                  opacity: isMuted ? 0.24 : Math.max(0.38, micLevel + 0.22),
-                }}
-                transition={{ duration: 0.035 }}
-                className={`w-1.5 rounded-full ${
-                  isMuted
-                    ? 'bg-red-500'
-                    : 'bg-lime-300 shadow-[0_0_14px_rgba(190,242,100,0.8)]'
-                }`}
-              />
-            ))}
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
+            <div className="flex h-12 items-center gap-1">
+              {innerBands.map((band, i) => {
+                const liveBand = isMuted ? 0 : Math.max(band, micLevel * 0.4);
+
+                return (
+                  <motion.div
+                    key={i}
+                    animate={{
+                      height: Math.max(5, liveBand * 42),
+                      opacity: isMuted ? 0.2 : Math.max(0.32, liveBand + 0.18),
+                    }}
+                    transition={{ duration: 0.035 }}
+                    className={`w-1 rounded-full ${
+                      isMuted
+                        ? 'bg-red-500'
+                        : 'bg-lime-300 shadow-[0_0_10px_rgba(190,242,100,0.75)]'
+                    }`}
+                  />
+                );
+              })}
+            </div>
           </div>
         ) : (
           <Power className="h-8 w-8 text-lime-300 transition-colors" />
@@ -1117,9 +1144,18 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const [showAuthConfirmPassword, setShowAuthConfirmPassword] = useState(false);
 
   useEffect(() => {
-    const fontId = 'vep-roboto-font';
+    const fontId = 'beatrice-roboto-font';
 
     if (!document.getElementById(fontId)) {
       const link = document.createElement('link');
@@ -1138,6 +1174,9 @@ export default function App() {
         try {
           const userRef = ref(rtdb, 'users/' + u.uid);
           const userSnap = await get(userRef);
+          const providerIds = u.providerData.map(provider => provider.providerId);
+          const authProvider = providerIds.includes('google.com') ? 'google' : 'email';
+          const hasGoogleServices = authProvider === 'google' && Boolean(localStorage.getItem('googleAccessToken'));
 
           if (!userSnap.exists()) {
             const initialSettings = {
@@ -1146,7 +1185,10 @@ export default function App() {
             };
 
             await set(userRef, {
-              displayName: u.displayName || DEFAULT_SETTINGS.userName,
+              displayName: initialSettings.userName,
+              email: u.email || '',
+              authProvider,
+              googleServicesConnected: hasGoogleServices,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               settings: initialSettings,
@@ -1162,6 +1204,13 @@ export default function App() {
                 ...data.settings,
               });
             }
+
+            await update(userRef, {
+              email: u.email || data.email || '',
+              authProvider,
+              googleServicesConnected: hasGoogleServices,
+              updatedAt: serverTimestamp(),
+            });
           }
         } catch (error) {
           handleDatabaseError(error, OperationType.CREATE, 'users');
@@ -1174,7 +1223,22 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const handleLogin = async () => {
+  const getAuthErrorMessage = (error: any) => {
+    const code = String(error?.code || '');
+
+    if (code.includes('auth/email-already-in-use')) return 'That email is already registered. Sign in instead.';
+    if (code.includes('auth/invalid-email')) return 'Enter a valid email address.';
+    if (code.includes('auth/user-not-found') || code.includes('auth/wrong-password') || code.includes('auth/invalid-credential')) return 'Email or password is incorrect.';
+    if (code.includes('auth/weak-password')) return 'Use at least 6 characters for the password.';
+    if (code.includes('auth/too-many-requests')) return 'Too many attempts. Wait a moment and try again.';
+    if (code.includes('auth/popup-closed-by-user')) return 'The Google sign-in window was closed.';
+    return error?.message || 'Authentication failed. Try again.';
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthBusy(true);
+    setAuthMessage(null);
+
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
@@ -1207,10 +1271,66 @@ export default function App() {
       console.error(error);
 
       if (error && error.message && error.message.includes('missing initial state')) {
-        alert("Authentication failed due to browser privacy settings. Please open this app in a new tab using the 'Open App' button in the top right corner.");
+        setAuthMessage({ type: 'error', text: "Authentication failed due to browser privacy settings. Open the app in a new tab and try again." });
       } else {
-        alert('Authentication error: ' + (error.message || 'Unknown error'));
+        setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) });
       }
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleEmailAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    setAuthMessage(null);
+
+    const email = authEmail.trim();
+    const password = authPassword.trim();
+    const fullName = authName.trim();
+
+    try {
+      if (!email) {
+        throw new Error('Enter your email address.');
+      }
+
+      if (authMode === 'reset') {
+        await sendPasswordResetEmail(auth, email);
+        setAuthMessage({ type: 'success', text: 'Password reset email sent. Check your inbox.' });
+        setAuthMode('signin');
+        return;
+      }
+
+      if (!password) {
+        throw new Error('Enter your password.');
+      }
+
+      if (authMode === 'signup') {
+        if (!fullName) {
+          throw new Error('Enter your full name.');
+        }
+
+        if (password.length < 6) {
+          throw new Error('Use at least 6 characters for the password.');
+        }
+
+        if (password !== authConfirmPassword.trim()) {
+          throw new Error('Passwords do not match.');
+        }
+
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, { displayName: fullName });
+        localStorage.removeItem('googleAccessToken');
+        return;
+      }
+
+      await signInWithEmailAndPassword(auth, email, password);
+      localStorage.removeItem('googleAccessToken');
+    } catch (error: any) {
+      console.error(error);
+      setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) });
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -1224,58 +1344,194 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center bg-[#020203] text-zinc-500" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="animate-pulse text-[10px] uppercase tracking-widest">Initializing System...</p>
+          <p className="animate-pulse text-[10px] uppercase tracking-widest">Preparing VEP...</p>
         </div>
       </div>
     );
   }
 
   if (!user) {
+    const isSignUp = authMode === 'signup';
+    const isReset = authMode === 'reset';
+    const authTitle = isSignUp ? 'Register' : isReset ? 'Reset password' : 'Welcome';
+    const authSubtitle = isSignUp
+      ? 'Create your new account'
+      : isReset
+        ? 'Send a reset link to your email'
+        : 'Login to your account';
+
     return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#050505] p-6 text-white" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
+      <div
+        className="relative min-h-[100dvh] overflow-hidden bg-[#050505] text-white"
+        style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(190,242,100,0.13),transparent_34%),linear-gradient(180deg,#050505,#020302)]" />
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '32px 32px' }}
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.14) 1px, transparent 1px)', backgroundSize: '32px 32px' }}
         />
-        <div className="pointer-events-none absolute left-1/2 top-0 -ml-[400px] h-[800px] w-[800px] rounded-full bg-lime-400/5 blur-[120px]" />
 
-        <div className="relative z-10 flex w-full max-w-sm flex-col items-center">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="group relative mb-8 h-24 w-24 rounded-[2rem] bg-gradient-to-br from-zinc-800 to-black p-[2px] shadow-2xl"
-          >
-            <div className="flex h-full w-full items-center justify-center rounded-[2rem] border border-white/5 bg-[#0A0A0B] transition-colors group-hover:border-lime-300/50">
-              <Volume2 className="h-10 w-10 text-lime-300" />
+        <motion.main
+          key={authMode}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col px-6 pb-[max(22px,env(safe-area-inset-bottom))] pt-[max(28px,env(safe-area-inset-top))]"
+        >
+          <section className="flex flex-1 flex-col justify-center py-10">
+            <div className="mb-9 flex flex-col items-center text-center">
+              <img src={EBURON_LOGO_URL} alt="Eburon" className="mb-8 h-24 w-24 rounded-full object-cover shadow-[0_0_70px_rgba(190,242,100,0.16)]" />
+              <h1 className="text-[44px] font-bold leading-none tracking-[-0.05em] text-white">{authTitle}</h1>
+              <p className="mt-2 text-sm text-zinc-500">{authSubtitle}</p>
             </div>
-            <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-black bg-lime-300 shadow-lg shadow-lime-300/40">
-              <Command className="h-4 w-4 text-black" />
-            </div>
-          </motion.div>
 
-          <h1 className="mb-2 text-5xl font-light tracking-tight text-white">Vep</h1>
+            <form onSubmit={handleEmailAuth} className="space-y-3">
+              {isSignUp && (
+                <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
+                  <UserRound className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <input
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                    placeholder="Full name"
+                    autoComplete="name"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                </label>
+              )}
 
-          <p className="mb-10 text-center text-lg font-light leading-relaxed text-zinc-500">
-            Normal Human Live Voice
-          </p>
+              <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
+                <Mail className="h-4 w-4 shrink-0 text-zinc-500" />
+                <input
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  type="email"
+                  placeholder="Email"
+                  autoComplete="email"
+                  className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                />
+              </label>
 
-          <div className="w-full rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
+              {!isReset && (
+                <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
+                  <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <input
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    type={showAuthPassword ? 'text' : 'password'}
+                    placeholder="Password"
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthPassword(value => !value)}
+                    aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
+                  >
+                    {showAuthPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  {!isSignUp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('reset');
+                        setAuthMessage(null);
+                      }}
+                      className="text-xs font-bold text-lime-200"
+                    >
+                      Forgot?
+                    </button>
+                  )}
+                </label>
+              )}
+
+              {isSignUp && (
+                <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
+                  <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
+                  <input
+                    value={authConfirmPassword}
+                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                    type={showAuthConfirmPassword ? 'text' : 'password'}
+                    placeholder="Confirm password"
+                    autoComplete="new-password"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthConfirmPassword(value => !value)}
+                    aria-label={showAuthConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
+                  >
+                    {showAuthConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </label>
+              )}
+
+              {authMessage && (
+                <div className={`rounded-2xl px-4 py-3 text-xs leading-5 ${
+                  authMessage.type === 'error'
+                    ? 'border border-red-400/20 bg-red-500/10 text-red-200'
+                    : authMessage.type === 'success'
+                      ? 'border border-lime-300/20 bg-lime-300/10 text-lime-100'
+                      : 'border border-white/10 bg-white/[0.06] text-zinc-300'
+                }`}>
+                  {authMessage.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={authBusy}
+                className="mt-7 flex h-14 w-full items-center justify-center rounded-full bg-lime-300 text-sm font-bold text-black shadow-[0_18px_48px_rgba(190,242,100,0.18)] transition active:scale-[0.985] disabled:opacity-60"
+              >
+                {authBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : isReset ? 'Send reset link' : isSignUp ? 'Sign up' : 'Sign in'}
+              </button>
+
+              {!isReset && (
+                <>
+                  <div className="flex items-center gap-3 py-1.5">
+                    <div className="h-px flex-1 bg-white/10" />
+                    <span className="text-xs font-medium text-zinc-600">or</span>
+                    <div className="h-px flex-1 bg-white/10" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={authBusy}
+                    className="flex h-14 w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-zinc-100 transition hover:border-lime-300/30 hover:bg-lime-300/10 active:scale-[0.985] disabled:opacity-60"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-black">G</span>
+                    Continue with Google
+                  </button>
+                </>
+              )}
+            </form>
+
+          </section>
+
+          <footer className="text-center text-sm text-zinc-500">
+            {isSignUp ? 'Back to ' : isReset ? 'Remembered it? ' : 'Create account? '}
             <button
-              onClick={handleLogin}
-              className="h-14 w-full rounded-full bg-lime-300 text-sm font-bold uppercase tracking-widest text-black shadow-lg shadow-lime-300/20 transition-all hover:bg-lime-200 active:scale-[0.98]"
+              type="button"
+              onClick={() => {
+                setAuthMode(isSignUp || isReset ? 'signin' : 'signup');
+                setAuthMessage(null);
+              }}
+              className="font-bold text-lime-200"
             >
-              Initialize Vep Identity
+              {isSignUp || isReset ? 'Sign in' : 'Sign up'}
             </button>
-          </div>
-        </div>
+          </footer>
+        </motion.main>
       </div>
     );
   }
 
-  return <MaximusAgent user={user} onLogout={handleLogout} initialSettings={settings} />;
+  return <BeatriceAgent user={user} onLogout={handleLogout} initialSettings={settings} />;
 }
 
-function MaximusAgent({
+function BeatriceAgent({
   user,
   onLogout,
   initialSettings,
@@ -1288,6 +1544,9 @@ function MaximusAgent({
   const [connecting, setConnecting] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
+  const [micBands, setMicBands] = useState<number[]>(Array(20).fill(0));
+  const [speakerLevel, setSpeakerLevel] = useState(0);
+  const [speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
   const [tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>('');
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
@@ -1445,25 +1704,61 @@ function MaximusAgent({
   const startMicVisualizer = () => {
     const tick = () => {
       const recorder: any = audioRecorderRef.current;
+      const streamer: any = audioStreamerRef.current;
       let nextLevel = 0;
+      let nextBands = Array(20).fill(0);
+      let nextSpeakerLevel = 0;
+      let nextSpeakerBands = Array(20).fill(0);
 
       try {
-        if (recorder && typeof recorder.getFrequencies === 'function') {
-          const freqs = recorder.getFrequencies(20) || [];
-          const avg = freqs.reduce((sum: number, n: number) => sum + Number(n || 0), 0) / Math.max(freqs.length, 1);
-          nextLevel = Math.min(1, Math.max(0, avg * 2.4));
+        if (recorder && typeof recorder.getFrequencyBands === 'function') {
+          const bands = recorder.getFrequencyBands(20) || [];
+          nextBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
+          const frequencyAverage = nextBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextBands.length, 1);
+          const recorderLevel = typeof recorder.getLevel === 'function' ? recorder.getLevel() : 0;
+          nextLevel = Math.min(1, Math.max(recorderLevel, frequencyAverage * 1.8));
         } else if (isActiveRef.current && !isMutedRef.current) {
           nextLevel = 0.06;
+          nextBands = Array(20).fill(0.04);
         }
       } catch (e) {
         nextLevel = 0;
+        nextBands = Array(20).fill(0);
+      }
+
+      try {
+        if (streamer && typeof streamer.getFrequencyBands === 'function') {
+          const bands = streamer.getFrequencyBands(20) || [];
+          nextSpeakerBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
+          const frequencyAverage = nextSpeakerBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextSpeakerBands.length, 1);
+          const streamerLevel = typeof streamer.getLevel === 'function' ? streamer.getLevel() : 0;
+          nextSpeakerLevel = Math.min(1, Math.max(streamerLevel, frequencyAverage * 1.65));
+        }
+      } catch (e) {
+        nextSpeakerLevel = 0;
+        nextSpeakerBands = Array(20).fill(0);
       }
 
       if (isMutedRef.current || !isActiveRef.current) {
         nextLevel = 0;
+        nextBands = Array(20).fill(0);
+      }
+
+      if (!isActiveRef.current) {
+        nextSpeakerLevel = 0;
+        nextSpeakerBands = Array(20).fill(0);
       }
 
       setMicLevel(prev => prev + (nextLevel - prev) * 0.46);
+      setMicBands(prev => nextBands.map((band: number, i: number) => {
+        const current = prev[i] || 0;
+        return current + (band - current) * 0.42;
+      }));
+      setSpeakerLevel(prev => prev + (nextSpeakerLevel - prev) * 0.5);
+      setSpeakerBands(prev => nextSpeakerBands.map((band: number, i: number) => {
+        const current = prev[i] || 0;
+        return current + (band - current) * 0.48;
+      }));
       micAnimationFrameRef.current = requestAnimationFrame(tick);
     };
 
@@ -1475,6 +1770,9 @@ function MaximusAgent({
     if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
     micAnimationFrameRef.current = null;
     setMicLevel(0);
+    setMicBands(Array(20).fill(0));
+    setSpeakerLevel(0);
+    setSpeakerBands(Array(20).fill(0));
   };
 
   const sendTextToLive = (text: string) => {
@@ -2283,16 +2581,22 @@ function MaximusAgent({
         await audioStreamerRef.current.init(24000);
       }
 
+      const hasGoogleServiceAccess = Boolean(localStorage.getItem('googleAccessToken'));
       const systemInstruction = [
-        CONSTANT_HIDDEN_SYSTEM_PROMPT,
+        BASE_LIVE_AGENT_PROMPT,
+        BIBLE_PERSONALITY || '',
+        historyContext,
+        `Product brand: VEP, which means Virtual Employee Persona. Default persona: Beatrice, Boss Jo Lernout's secretary.`,
         `User preferred name: ${settings.userName}.`,
         `Agent visible name: ${settings.agentName}.`,
-        `Agent personality overlay: ${settings.personality}.`,
-        BIBLE_PERSONALITY || '',
+        hasGoogleServiceAccess
+          ? `Authentication mode: Google account connected. Google services such as Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics may be available through tools when the user asks.`
+          : `Authentication mode: email-only or Google services not connected. The voice assistant, chat history, profile, camera, file notes, and local app features are available, but Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics are not available unless the user signs in with Google. If asked for those services, explain this normally and briefly.`,
+        `Relationship frame: ${settings.agentName} is working with ${settings.userName} as a private secretary and trusted office aide. If the user is Jo Lernout, ${settings.agentName} may respectfully call him "Meneer Jo" when it fits the moment. Start in English unless the user starts in another language. Dutch Flemish is available in a normal local office style, and the persona can switch to almost any language when needed.`,
+        `Agent personality overlay from settings page. This is customizable and must sit on top of the constant base prompt without replacing it: ${settings.personality}.`,
         `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
         `When asked to create, build, render, showcase, prototype, code, animate, make slides, make forms, make dashboards, make pages, make Three.js demos, or make printable documents, call render_web_artifact with a complete standalone HTML/CSS/JS file. Never just describe the code if the user wants it rendered or built.`,
         `For HTML/CSS/JS artifacts, include all CSS in <style> and all JS in <script>. Make it directly openable. For slides, include navigation controls and keyboard support. For documents, include print CSS and a print button. For Three.js, load Three.js from a CDN and keep everything in one HTML file.`,
-        historyContext,
       ].filter(Boolean).join('\n\n');
 
       const session = await aiRef.current.live.connect({
@@ -2531,7 +2835,9 @@ function MaximusAgent({
       startMicVisualizer();
 
       setTimeout(() => {
-        sendTextToLive(`${settings.userName} is here. Start like you are already present in front of them. Say something like: Yes, I'm here. I'm listening. Do not ask how you can help.`);
+        sendTextToLive(
+          `${settings.userName} is here in the office. Start like ${settings.agentName} is already sitting at the desk nearby as the office employee. If previous conversation context is available, you may briefly mention one relevant thing remembered from it. Begin in English, normally and respectfully, like: "Yes, boss. I'm listening." or "Yes, I'm here, Meneer Jo. I'm listening." Do not ask how you can help.`
+        );
       }, 500);
     } catch (err) {
       console.error('Session start failed:', err);
@@ -2775,7 +3081,7 @@ function MaximusAgent({
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -12 }}
-                  className="pointer-events-none absolute left-1/2 top-24 z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+                  className="pointer-events-none absolute left-1/2 top-[106px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
                 >
                   <OneLineStreamingTranscript
                     role={currentTranscript.role}
@@ -2794,6 +3100,13 @@ function MaximusAgent({
           <button onClick={() => setShowSidebar(true)} className="-ml-2 rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
             <Menu className="h-5 w-5" />
           </button>
+          <div className="hidden items-center gap-3 sm:flex">
+            <img src={EBURON_LOGO_URL} alt="Eburon" className="h-8 w-8 rounded-full object-cover" />
+            <div className="leading-none">
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-lime-200">{PRODUCT_BRAND}</p>
+              <p className="mt-1 text-[10px] text-zinc-600">{PRODUCT_FULL_NAME}</p>
+            </div>
+          </div>
         </div>
 
         <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
@@ -2833,7 +3146,12 @@ function MaximusAgent({
             <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-lime-300/[0.04] to-transparent" />
           </div>
 
-          <LimeVoiceOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} />
+          <LimeVoiceOrb
+            isActive={isActive}
+            isAgentSpeaking={isAgentSpeaking}
+            speakerLevel={speakerLevel}
+            speakerBands={speakerBands}
+          />
 
           <AnimatePresence>
             {currentTranscript && (
@@ -2841,7 +3159,7 @@ function MaximusAgent({
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
-                className="absolute left-1/2 top-[330px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+                className="absolute left-1/2 top-[340px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
               >
                 <OneLineStreamingTranscript
                   role={currentTranscript.role}
@@ -2935,6 +3253,7 @@ function MaximusAgent({
                     connecting={connecting}
                     isMuted={isMuted}
                     micLevel={0}
+                    micBands={micBands}
                     onClick={startSession}
                   />
                 ) : (
@@ -2943,6 +3262,7 @@ function MaximusAgent({
                     connecting={connecting}
                     isMuted={isMuted}
                     micLevel={micLevel}
+                    micBands={micBands}
                     onClick={stopSession}
                   />
                 )}
@@ -2975,8 +3295,8 @@ function MaximusAgent({
             >
               <div className="flex items-center justify-between border-b border-white/10 p-6">
                 <div>
-                  <h2 className="text-sm font-bold uppercase tracking-widest text-white">History</h2>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Firebase RTDB conversations</p>
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-white">Office History</h2>
+                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Saved conversation records</p>
                 </div>
                 <button onClick={() => setShowSidebar(false)} className="-mr-2 rounded-xl p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
                   <X className="h-5 w-5" />
@@ -3069,7 +3389,7 @@ function MaximusAgent({
 
                   {historyMsgs.length === 0 && (
                     <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
-                      No History Yet
+                      No Office History Yet
                     </div>
                   )}
                 </div>
@@ -3117,7 +3437,7 @@ function MaximusAgent({
             className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#050505]"
           >
             <div className="sticky top-0 z-10 mx-auto flex w-full max-w-2xl items-center justify-between border-b border-white/10 bg-[#050505]/80 p-6 backdrop-blur-xl">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-white">Profile</h2>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-white">Office Profile</h2>
 
               <button onClick={() => setShowProfile(false)} className="rounded-xl bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white">
                 <X className="h-5 w-5" />
@@ -3169,8 +3489,8 @@ function MaximusAgent({
                 </div>
 
                 <div className="text-center">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-300">Avatar Node</h3>
-                  <p className="mt-1 text-[10px] text-zinc-600">Tap to re-configure</p>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-300">Profile Photo</h3>
+                  <p className="mt-1 text-[10px] text-zinc-600">Tap to update</p>
                 </div>
               </div>
 
@@ -3178,28 +3498,28 @@ function MaximusAgent({
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                     <UserRound className="h-3.5 w-3.5" />
-                    How to call you?
+                    How should Beatrice address you?
                   </label>
                   <input
                     type="text"
                     value={settings.userName}
                     onChange={(e) => setSettings(s => ({ ...s, userName: e.target.value }))}
                     className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
-                    placeholder="e.g. Master E"
+                    placeholder="e.g. Jo Lernout"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                     <Bot className="h-3.5 w-3.5" />
-                    Vep Agent Name
+                    Persona Name
                   </label>
                   <input
                     type="text"
                     value={settings.agentName}
                     onChange={(e) => setSettings(s => ({ ...s, agentName: e.target.value }))}
                     className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
-                    placeholder="e.g. Vep"
+                    placeholder="e.g. Beatrice"
                   />
                 </div>
 
@@ -3219,7 +3539,7 @@ function MaximusAgent({
                 </div>
 
                 <div className="flex flex-1 flex-col space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Default Personality of the Agent</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Default Persona Instructions</label>
                   <textarea
                     value={settings.personality}
                     onChange={(e) => setSettings(s => ({ ...s, personality: e.target.value }))}
@@ -3227,7 +3547,7 @@ function MaximusAgent({
                     placeholder="Describe how the agent should behave..."
                   />
                   <p className="text-[10px] leading-relaxed text-zinc-600">
-                    The constant system prompt stays hidden and is always applied behind this personality.
+                    The hidden office-behavior prompt stays applied behind this editable persona.
                   </p>
                 </div>
               </div>
