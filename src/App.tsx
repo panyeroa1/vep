@@ -1,11 +1,46 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { auth, rtdb, handleDatabaseError, OperationType } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut, browserPopupRedirectResolver } from 'firebase/auth';
-import { ref, get, set, push, onValue, query, orderByChild, limitToLast, serverTimestamp, update } from 'firebase/database';
+import {
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  User,
+  signOut,
+  browserPopupRedirectResolver,
+} from 'firebase/auth';
+import {
+  ref,
+  get,
+  set,
+  push,
+  onValue,
+  query,
+  orderByChild,
+  limitToLast,
+  serverTimestamp,
+  update,
+} from 'firebase/database';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BIBLE_PERSONALITY } from './lib/personality';
-import { Square, Loader2, Power, LogOut, Volume2, Command, Check, Menu, Mic, MicOff, Video, VideoOff, X, Save, Camera, MessageCircle } from 'lucide-react';
+import {
+  Square,
+  Loader2,
+  Power,
+  Volume2,
+  Command,
+  Check,
+  Menu,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  X,
+  Save,
+  Camera,
+  MessageCircle,
+  LogOut,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface ChatMessage {
@@ -143,7 +178,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   selectedVoice: 'Charon',
 };
 
-function KaraokeTranscript({
+function OneLineStreamingTranscript({
   text,
   role,
   name,
@@ -159,13 +194,15 @@ function KaraokeTranscript({
     setActiveWord(0);
     if (words.length === 0) return;
 
-    const intervalMs = role === 'model' ? 170 : 130;
+    const intervalMs = role === 'model' ? 135 : 105;
+
     const interval = window.setInterval(() => {
       setActiveWord(prev => {
         if (prev >= words.length - 1) {
           window.clearInterval(interval);
           return prev;
         }
+
         return prev + 1;
       });
     }, intervalMs);
@@ -176,46 +213,206 @@ function KaraokeTranscript({
   return (
     <motion.div
       key={`${role}-${text}`}
-      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 10, scale: 0.98 }}
-      transition={{ duration: 0.18 }}
-      className={`w-full rounded-3xl border px-5 py-4 shadow-2xl backdrop-blur-xl ${
-        role === 'model'
-          ? 'bg-amber-500/10 border-amber-500/20'
-          : 'bg-white/5 border-white/10'
-      }`}
+      initial={{ opacity: 0, y: 10, filter: 'blur(8px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      exit={{ opacity: 0, y: -8, filter: 'blur(8px)' }}
+      transition={{ duration: 0.22 }}
+      className="w-full max-w-5xl overflow-hidden rounded-full border border-white/10 bg-black/50 px-5 py-3 shadow-2xl backdrop-blur-2xl"
+      style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-3 whitespace-nowrap">
         <span
-          className={`text-[10px] uppercase tracking-[0.25em] font-bold ${
-            role === 'model' ? 'text-amber-500' : 'text-zinc-500'
+          className={`shrink-0 rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] ${
+            role === 'user'
+              ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-400/20'
+              : 'bg-amber-500/10 text-amber-300 border border-amber-400/20'
           }`}
         >
-          {name}
+          {role === 'user' ? 'You' : name}
         </span>
-        <span className="text-[9px] uppercase tracking-widest text-zinc-600">
-          {role === 'model' ? 'Live Voice' : 'Live Input'}
-        </span>
-      </div>
 
-      <p className="text-lg md:text-xl leading-relaxed font-light">
-        {words.map((word, index) => (
-          <span
-            key={`${word}-${index}`}
-            className={`transition-all duration-150 ${
-              index <= activeWord
-                ? role === 'model'
-                  ? 'text-amber-100'
-                  : 'text-white'
-                : 'text-zinc-600'
-            }`}
-          >
-            {word}{' '}
-          </span>
-        ))}
-      </p>
+        <motion.div
+          initial={{ x: 20 }}
+          animate={{ x: 0 }}
+          transition={{ duration: 0.2 }}
+          className="min-w-0 flex-1 overflow-hidden"
+        >
+          <p className="truncate text-lg font-medium leading-none tracking-tight md:text-2xl">
+            {words.map((word, index) => (
+              <motion.span
+                key={`${word}-${index}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: index <= activeWord ? 1 : 0.28, y: 0 }}
+                transition={{ duration: 0.12, delay: Math.min(index * 0.015, 0.25) }}
+                className={`inline-block pr-1.5 ${
+                  index <= activeWord
+                    ? role === 'user'
+                      ? 'text-cyan-100'
+                      : 'text-amber-50'
+                    : 'text-zinc-600'
+                }`}
+              >
+                {word}
+              </motion.span>
+            ))}
+          </p>
+        </motion.div>
+      </div>
     </motion.div>
+  );
+}
+
+function ChatGPTStyleOrb({
+  isActive,
+  isAgentSpeaking,
+}: {
+  isActive: boolean;
+  isAgentSpeaking: boolean;
+}) {
+  return (
+    <div className="relative flex h-64 w-64 items-center justify-center">
+      <AnimatePresence>
+        {isActive && (
+          <>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.65 }}
+              animate={{
+                opacity: isAgentSpeaking ? 0.55 : 0.32,
+                scale: isAgentSpeaking ? 1.26 : 1.05,
+              }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.65 }}
+              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(245,158,11,0.35),rgba(20,184,166,0.16),transparent_68%)] blur-2xl"
+            />
+
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+              className="absolute h-64 w-64 rounded-full bg-[conic-gradient(from_90deg,rgba(245,158,11,0.22),rgba(20,184,166,0.24),rgba(99,102,241,0.16),rgba(245,158,11,0.22))] blur-xl"
+            />
+          </>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        animate={{
+          scale: isAgentSpeaking ? [1, 1.045, 1] : [1, 1.015, 1],
+        }}
+        transition={{
+          duration: isAgentSpeaking ? 0.65 : 2.2,
+          repeat: Infinity,
+          ease: 'easeInOut',
+        }}
+        className="relative h-52 w-52 overflow-hidden rounded-full border border-white/10 bg-[#08090a] shadow-[0_0_90px_rgba(245,158,11,0.14)]"
+      >
+        <motion.div
+          animate={{
+            x: isAgentSpeaking ? ['-12%', '8%', '-12%'] : ['-8%', '6%', '-8%'],
+            y: isAgentSpeaking ? ['8%', '-10%', '8%'] : ['4%', '-4%', '4%'],
+            scale: isAgentSpeaking ? [1.1, 1.25, 1.1] : [1, 1.12, 1],
+          }}
+          transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -left-10 -top-8 h-40 w-44 rounded-full bg-amber-400/40 blur-2xl"
+        />
+
+        <motion.div
+          animate={{
+            x: isAgentSpeaking ? ['18%', '-10%', '18%'] : ['10%', '-8%', '10%'],
+            y: isAgentSpeaking ? ['-8%', '12%', '-8%'] : ['-4%', '8%', '-4%'],
+            scale: isAgentSpeaking ? [1.08, 1.28, 1.08] : [1.02, 1.16, 1.02],
+          }}
+          transition={{ duration: 5.1, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -bottom-8 -right-10 h-44 w-44 rounded-full bg-teal-400/35 blur-2xl"
+        />
+
+        <motion.div
+          animate={{
+            x: ['-6%', '10%', '-6%'],
+            y: ['-6%', '10%', '-6%'],
+            scale: isAgentSpeaking ? [1, 1.3, 1] : [1, 1.1, 1],
+          }}
+          transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute left-8 top-10 h-32 w-32 rounded-full bg-indigo-400/24 blur-2xl"
+        />
+
+        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_35%_28%,rgba(255,255,255,0.22),transparent_22%),radial-gradient(circle_at_50%_75%,rgba(0,0,0,0.32),transparent_42%)]" />
+
+        <motion.div
+          animate={{
+            opacity: isActive ? [0.35, 0.75, 0.35] : 0.15,
+          }}
+          transition={{ duration: 1.8, repeat: Infinity }}
+          className="absolute inset-[18px] rounded-full border border-white/10"
+        />
+
+        <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/10" />
+      </motion.div>
+    </div>
+  );
+}
+
+function StartIconMicVisualizer({
+  isActive,
+  connecting,
+  isMuted,
+  micLevel,
+  onClick,
+}: {
+  isActive: boolean;
+  connecting: boolean;
+  isMuted: boolean;
+  micLevel: number;
+  onClick: () => void;
+}) {
+  const bars = [0.6, 0.82, 1, 0.72, 0.5];
+
+  return (
+    <button onClick={onClick} disabled={connecting} className="group relative">
+      <motion.div
+        animate={{
+          scale: isActive ? 1 + micLevel * 0.35 : 1,
+          opacity: isActive ? 0.4 + micLevel * 0.35 : 0.16,
+        }}
+        transition={{ duration: 0.08 }}
+        className={`absolute -inset-4 rounded-full blur-xl ${
+          isMuted ? 'bg-red-500/20' : 'bg-cyan-400/20'
+        }`}
+      />
+
+      <div
+        className={`relative flex h-20 w-20 items-center justify-center rounded-full border bg-[#0A0A0B] shadow-2xl transition-all ${
+          isActive
+            ? isMuted
+              ? 'border-red-500/35'
+              : 'border-cyan-400/45'
+            : 'border-white/10 group-hover:border-amber-500/50'
+        }`}
+      >
+        {connecting ? (
+          <Loader2 className="h-7 w-7 animate-spin text-amber-500" />
+        ) : isActive ? (
+          <div className="flex h-9 items-center gap-1.5">
+            {bars.map((multiplier, i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  height: Math.max(7, micLevel * 42 * multiplier),
+                  opacity: isMuted ? 0.28 : Math.max(0.35, micLevel + 0.25),
+                }}
+                transition={{ duration: 0.06 }}
+                className={`w-1.5 rounded-full ${
+                  isMuted
+                    ? 'bg-red-500'
+                    : 'bg-cyan-300 shadow-[0_0_12px_rgba(103,232,249,0.65)]'
+                }`}
+              />
+            ))}
+          </div>
+        ) : (
+          <Power className="h-8 w-8 text-amber-500 transition-colors" />
+        )}
+      </div>
+    </button>
   );
 }
 
@@ -223,6 +420,18 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    const fontId = 'vep-roboto-font';
+
+    if (!document.getElementById(fontId)) {
+      const link = document.createElement('link');
+      link.id = fontId;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap';
+      document.head.appendChild(link);
+    }
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -288,7 +497,7 @@ export default function App() {
       if (error && error.message && error.message.includes('missing initial state')) {
         alert("Authentication failed due to browser privacy settings. Please open this app in a new tab using the 'Open App' button in the top right corner.");
       } else {
-        alert("Authentication error: " + (error.message || "Unknown error"));
+        alert('Authentication error: ' + (error.message || 'Unknown error'));
       }
     }
   };
@@ -300,10 +509,10 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#020203] text-zinc-500 flex items-center justify-center font-mono">
+      <div className="flex min-h-screen items-center justify-center bg-[#020203] text-zinc-500" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin" />
-          <p className="text-[10px] uppercase tracking-widest animate-pulse">Initializing System...</p>
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="animate-pulse text-[10px] uppercase tracking-widest">Initializing System...</p>
         </div>
       </div>
     );
@@ -311,47 +520,40 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+      <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#050505] p-6 text-white" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
         <div
-          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          className="pointer-events-none absolute inset-0 opacity-[0.03]"
           style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '32px 32px' }}
         />
-        <div className="absolute top-0 left-1/2 -ml-[400px] w-[800px] h-[800px] bg-amber-500/5 rounded-full blur-[120px] pointer-events-none" />
+        <div className="pointer-events-none absolute left-1/2 top-0 -ml-[400px] h-[800px] w-[800px] rounded-full bg-amber-500/5 blur-[120px]" />
 
-        <div className="relative z-10 flex flex-col items-center max-w-sm w-full">
+        <div className="relative z-10 flex w-full max-w-sm flex-col items-center">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="w-24 h-24 rounded-[2rem] bg-gradient-to-br from-zinc-800 to-black p-[2px] mb-8 shadow-2xl relative group"
+            className="group relative mb-8 h-24 w-24 rounded-[2rem] bg-gradient-to-br from-zinc-800 to-black p-[2px] shadow-2xl"
           >
-            <div className="w-full h-full rounded-[2rem] bg-[#0A0A0B] flex items-center justify-center border border-white/5 transition-colors group-hover:border-amber-500/50">
-              <Volume2 className="w-10 h-10 text-amber-500" />
+            <div className="flex h-full w-full items-center justify-center rounded-[2rem] border border-white/5 bg-[#0A0A0B] transition-colors group-hover:border-amber-500/50">
+              <Volume2 className="h-10 w-10 text-amber-500" />
             </div>
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center shadow-lg shadow-amber-500/40 border-2 border-black">
-              <Command className="w-4 h-4 text-black" />
+            <div className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-black bg-amber-500 shadow-lg shadow-amber-500/40">
+              <Command className="h-4 w-4 text-black" />
             </div>
           </motion.div>
 
-          <h1 className="text-5xl font-light tracking-tight mb-2 text-white">Vep</h1>
+          <h1 className="mb-2 text-5xl font-light tracking-tight text-white">Vep</h1>
 
-          <p className="text-zinc-500 text-center mb-10 leading-relaxed font-serif italic text-lg decoration-zinc-800">
+          <p className="mb-10 text-center text-lg font-light leading-relaxed text-zinc-500">
             Normal Human Live Voice
           </p>
 
-          <div className="w-full p-1 bg-white/5 rounded-full backdrop-blur-xl border border-white/10">
+          <div className="w-full rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
             <button
               onClick={handleLogin}
-              className="w-full bg-amber-500 text-black font-bold text-sm tracking-widest uppercase h-14 rounded-full hover:bg-amber-400 transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20"
+              className="h-14 w-full rounded-full bg-amber-500 text-sm font-bold uppercase tracking-widest text-black shadow-lg shadow-amber-500/20 transition-all hover:bg-amber-400 active:scale-[0.98]"
             >
               Initialize Vep Identity
             </button>
-          </div>
-
-          <div className="mt-8 flex gap-4 opacity-30 grayscale hover:grayscale-0 transition-all duration-700">
-            <img src="https://www.gstatic.com/images/branding/product/2x/gmail_64dp.png" className="w-5 h-5" alt="G" />
-            <img src="https://www.gstatic.com/images/branding/product/2x/calendar_64dp.png" className="w-5 h-5" alt="C" />
-            <img src="https://www.gstatic.com/images/branding/product/2x/drive_64dp.png" className="w-5 h-5" alt="D" />
-            <img src="https://www.gstatic.com/images/branding/product/2x/sheets_64dp.png" className="w-5 h-5" alt="S" />
           </div>
         </div>
       </div>
@@ -373,6 +575,7 @@ function MaximusAgent({
   const [isActive, setIsActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
   const [tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>('');
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
@@ -397,6 +600,7 @@ function MaximusAgent({
 
   const transcriptTimeoutRef = useRef<any>(null);
   const isMutedRef = useRef(false);
+  const micAnimationFrameRef = useRef<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -449,7 +653,7 @@ function MaximusAgent({
       setHistoryMsgs(rawMsgs);
 
       if (msgs.length > 0) {
-        setHistoryContext("Previous conversation for context memory:\n" + msgs.slice(-20).join("\n"));
+        setHistoryContext('Previous conversation for context memory:\n' + msgs.slice(-20).join('\n'));
       } else {
         setHistoryContext('');
       }
@@ -507,7 +711,7 @@ function MaximusAgent({
     userTranscriptBufferRef.current = '';
   };
 
-  const updateLiveTranscript = (role: 'user' | 'model', text: string, clearDelay = 5000) => {
+  const updateLiveTranscript = (role: 'user' | 'model', text: string, clearDelay = 4300) => {
     const clean = text.trim();
     if (!clean) return;
 
@@ -519,9 +723,43 @@ function MaximusAgent({
     }, clearDelay);
   };
 
+  const startMicVisualizer = () => {
+    const tick = () => {
+      const recorder: any = audioRecorderRef.current;
+      let nextLevel = 0;
+
+      try {
+        if (recorder && typeof recorder.getFrequencies === 'function') {
+          const freqs = recorder.getFrequencies(16) || [];
+          const avg = freqs.reduce((sum: number, n: number) => sum + Number(n || 0), 0) / Math.max(freqs.length, 1);
+          nextLevel = Math.min(1, Math.max(0, avg * 1.85));
+        } else if (isActive && !isMutedRef.current) {
+          nextLevel = 0.08 + Math.random() * 0.16;
+        }
+      } catch (e) {
+        nextLevel = 0;
+      }
+
+      if (isMutedRef.current || !isActive) {
+        nextLevel = 0;
+      }
+
+      setMicLevel(prev => prev + (nextLevel - prev) * 0.38);
+      micAnimationFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
+    micAnimationFrameRef.current = requestAnimationFrame(tick);
+  };
+
+  const stopMicVisualizer = () => {
+    if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
+    micAnimationFrameRef.current = null;
+    setMicLevel(0);
+  };
+
   const sendTextToLive = (text: string) => {
     if (!sessionRef.current || typeof sessionRef.current.sendRealtimeInput !== 'function') return;
-
     sessionRef.current.sendRealtimeInput({ text });
   };
 
@@ -664,13 +902,13 @@ function MaximusAgent({
               if (serverContent.inputTranscription?.text) {
                 const inputText = serverContent.inputTranscription.text;
                 userTranscriptBufferRef.current = inputText.trim();
-                updateLiveTranscript('user', userTranscriptBufferRef.current, 3000);
+                updateLiveTranscript('user', userTranscriptBufferRef.current, 3600);
               }
 
               if (serverContent.outputTranscription?.text) {
                 const outputText = serverContent.outputTranscription.text;
                 modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + outputText).trim();
-                updateLiveTranscript('model', modelTranscriptBufferRef.current, 5000);
+                updateLiveTranscript('model', modelTranscriptBufferRef.current, 4300);
               }
 
               const parts = serverContent.modelTurn?.parts;
@@ -685,7 +923,7 @@ function MaximusAgent({
 
                   if (part.text?.trim()) {
                     modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + ' ' + part.text).trim();
-                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 5000);
+                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 4300);
                   }
                 }
               }
@@ -729,7 +967,7 @@ function MaximusAgent({
 
             if (visibleText) {
               userTranscriptBufferRef.current = visibleText;
-              updateLiveTranscript('user', visibleText, 3000);
+              updateLiveTranscript('user', visibleText, 3600);
             }
 
             if (finalText.trim()) {
@@ -760,9 +998,10 @@ function MaximusAgent({
 
       setIsActive(true);
       setConnecting(false);
+      startMicVisualizer();
 
       setTimeout(() => {
-        sendTextToLive("System connected. Master E has arrived. Respond normally, briefly, and without sounding like a generic assistant.");
+        sendTextToLive('System connected. Master E has arrived. Respond normally, briefly, and without sounding like a generic assistant.');
       }, 500);
     } catch (err) {
       console.error('Session start failed:', err);
@@ -874,6 +1113,8 @@ function MaximusAgent({
     try { audioStreamerRef.current?.stop(); } catch (e) {}
     try { sessionRef.current?.close(); } catch (e) {}
 
+    stopMicVisualizer();
+
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
 
     if (videoRef.current && videoRef.current.srcObject) {
@@ -906,120 +1147,88 @@ function MaximusAgent({
   };
 
   return (
-    <div className="min-h-screen bg-[#020203] text-zinc-300 flex flex-col h-[100dvh] overflow-hidden font-sans selection:bg-amber-500/30 relative">
-      <div className={`absolute inset-0 z-0 bg-black transition-opacity duration-700 ${isVideoEnabled ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <video ref={videoRef} playsInline muted className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} />
-        <div className="absolute top-24 left-8 flex items-center gap-2 px-2.5 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
-          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
-          <span className="text-[8px] uppercase tracking-widest text-zinc-300 font-bold">V-Stream Live</span>
+    <div
+      className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-amber-500/30"
+      style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
+    >
+      <div className={`absolute inset-0 z-0 bg-black transition-opacity duration-700 ${isVideoEnabled ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+        <video ref={videoRef} playsInline muted className={`h-full w-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} />
+        <div className="absolute left-8 top-24 flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 backdrop-blur-md">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+          <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-300">V-Stream Live</span>
         </div>
       </div>
 
       <canvas ref={canvasRef} className="hidden" />
 
-      <header className="px-8 py-6 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 backdrop-blur-md z-50">
+      <header className="z-50 flex items-center justify-between border-b border-white/5 bg-[#050505]/80 px-8 py-6 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <button onClick={() => setShowSidebar(true)} className="p-2 -ml-2 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-zinc-400 hover:text-white">
-            <Menu className="w-5 h-5" />
+          <button onClick={() => setShowSidebar(true)} className="-ml-2 rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
+            <Menu className="h-5 w-5" />
           </button>
 
-          <button onClick={() => setShowChatBox(p => !p)} className="p-2 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-zinc-400 hover:text-white">
-            <MessageCircle className="w-5 h-5" />
+          <button onClick={() => setShowChatBox(p => !p)} className="rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
+            <MessageCircle className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+        <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
           {isActive && (
-            <span className={`text-[10px] uppercase tracking-[0.2em] px-3 py-1 rounded-full border ${isAgentSpeaking ? 'border-amber-500/50 text-amber-500 bg-amber-500/10' : 'border-emerald-500/50 text-emerald-500 bg-emerald-500/10'}`}>
+            <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${
+              isAgentSpeaking ? 'border-amber-500/50 bg-amber-500/10 text-amber-500' : 'border-cyan-400/50 bg-cyan-400/10 text-cyan-300'
+            }`}>
               {isAgentSpeaking ? 'Speaking...' : 'Listening...'}
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="flex flex-col items-end mr-2 hidden sm:flex">
-            <span className="text-[9px] uppercase tracking-widest text-zinc-600 font-bold">Voice</span>
-            <span className="text-[10px] font-mono flex items-center gap-1.5 text-amber-500">
+          <div className="mr-2 hidden flex-col items-end sm:flex">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Voice</span>
+            <span className="flex items-center gap-1.5 font-mono text-[10px] text-amber-500">
               {selectedVoiceMeta.alias}
             </span>
           </div>
 
-          <button onClick={() => setShowProfile(true)} className="w-10 h-10 rounded-full border border-white/10 overflow-hidden hover:border-amber-500/50 transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/50">
+          <button onClick={() => setShowProfile(true)} className="h-10 w-10 overflow-hidden rounded-full border border-white/10 transition-all hover:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/50">
             {settings.avatarUrl || user.photoURL ? (
-              <img src={settings.avatarUrl || user.photoURL || ''} alt="Profile" className="w-full h-full object-cover" />
+              <img src={settings.avatarUrl || user.photoURL || ''} alt="Profile" className="h-full w-full object-cover" />
             ) : (
-              <div className="w-full h-full bg-zinc-800 flex items-center justify-center font-bold">{user.displayName?.[0] || 'U'}</div>
+              <div className="flex h-full w-full items-center justify-center bg-zinc-800 font-bold">{user.displayName?.[0] || 'U'}</div>
             )}
           </button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-start pt-16 relative p-8 z-10 w-full pointer-events-none">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none z-[-1] -translate-y-20">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-white/[0.02] rounded-full" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] border border-white/[0.01] rounded-full" />
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-gradient-to-b from-transparent via-white/[0.03] to-transparent" />
+      <main className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-start p-8 pt-12">
+        <div className="pointer-events-none absolute inset-0 z-[-1] -translate-y-20 overflow-hidden">
+          <div className="absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.02]" />
+          <div className="absolute left-1/2 top-1/2 h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.01]" />
+          <div className="absolute bottom-0 left-1/2 top-0 w-px bg-gradient-to-b from-transparent via-white/[0.03] to-transparent" />
           <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-white/[0.03] to-transparent" />
         </div>
 
-        <div className="relative w-full max-w-[340px] aspect-square flex items-center justify-center">
-          <AnimatePresence>
-            {isActive && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{
-                  opacity: isAgentSpeaking ? 0.4 : 0.15,
-                  scale: isAgentSpeaking ? 1.4 : 1.2,
-                  rotate: 360,
-                }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
-                className="absolute inset-0 rounded-full bg-gradient-to-tr from-amber-500/20 via-orange-500/10 to-transparent blur-[100px]"
+        <ChatGPTStyleOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} />
+
+        <AnimatePresence>
+          {currentTranscript && (
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="absolute left-1/2 top-[330px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+            >
+              <OneLineStreamingTranscript
+                role={currentTranscript.role}
+                text={currentTranscript.text}
+                name={settings.personaName}
               />
-            )}
-          </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-          <motion.div
-            animate={{
-              borderColor: isActive ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.05)',
-              boxShadow: isActive ? '0 0 80px rgba(245, 158, 11, 0.1)' : '0 0 0px transparent',
-            }}
-            className="relative z-10 w-56 h-56 rounded-full flex items-center justify-center overflow-hidden bg-[#050506] border transition-colors duration-1000"
-          >
-            <div
-              className="absolute inset-0 opacity-10 pointer-events-none"
-              style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '16px 16px' }}
-            />
-
-            {connecting ? (
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-                <span className="text-[10px] uppercase tracking-widest text-amber-500/60 font-bold">Connecting</span>
-              </div>
-            ) : isActive ? (
-              <div className="flex gap-2 items-end h-16">
-                {[0.4, 0.5, 0.3, 0.6, 0.45, 0.55].map((d, i) => (
-                  <motion.div
-                    key={i}
-                    animate={{
-                      height: isAgentSpeaking ? ['20px', '60px', '20px'] : '12px',
-                      opacity: isAgentSpeaking ? 1 : 0.3,
-                    }}
-                    transition={{ duration: d, repeat: Infinity, delay: i * 0.05 }}
-                    className="w-2 bg-amber-500 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.5)]"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-0.5 bg-zinc-800 rounded-full opacity-50" />
-              </div>
-            )}
-          </motion.div>
-        </div>
-
-        <div className="absolute inset-x-0 bottom-8 flex flex-col items-center justify-end pointer-events-none z-50">
-          <div className="w-full max-w-md px-6 space-y-2 mb-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-8 z-50 flex flex-col items-center justify-end">
+          <div className="mb-4 w-full max-w-md space-y-2 px-6">
             <AnimatePresence>
               {tasks.map(task => (
                 <motion.div
@@ -1028,29 +1237,29 @@ function MaximusAgent({
                   initial={{ opacity: 0, x: -50, scale: 0.9 }}
                   animate={{ opacity: 1, x: 0, scale: 1 }}
                   exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
-                  className="p-3 bg-[#0A0A0B]/80 backdrop-blur-xl border border-white/5 rounded-xl shadow-2xl flex items-center gap-4 border-l-2 border-l-amber-500/50"
+                  className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-amber-500/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl"
                 >
-                  <div className="relative flex-shrink-0">
+                  <div className="relative shrink-0">
                     {task.status === 'processing' ? (
-                      <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
                     ) : (
-                      <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                        <Check className="w-2.5 h-2.5 text-black" strokeWidth={4} />
+                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
+                        <Check className="h-2.5 w-2.5 text-black" strokeWidth={4} />
                       </div>
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[9px] uppercase tracking-widest text-amber-500 font-bold">{task.serviceName}</span>
-                      <span className="text-[8px] font-mono text-zinc-600">{task.status.toUpperCase()}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 flex items-center justify-between">
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-amber-500">{task.serviceName}</span>
+                      <span className="font-mono text-[8px] text-zinc-600">{task.status.toUpperCase()}</span>
                     </div>
-                    <p className="text-xs text-zinc-100 truncate">{task.action}</p>
+                    <p className="truncate text-xs text-zinc-100">{task.action}</p>
                     {task.result && (
                       <motion.p
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
-                        className="text-[10px] text-zinc-400 mt-1 leading-tight"
+                        className="mt-1 text-[10px] leading-tight text-zinc-400"
                       >
                         {task.result}
                       </motion.p>
@@ -1067,28 +1276,28 @@ function MaximusAgent({
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
-                className="w-full max-w-3xl px-4 mb-5"
+                className="mb-5 w-full max-w-3xl px-4"
               >
-                <div className="bg-black/45 backdrop-blur-xl border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden pointer-events-auto">
-                  <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+                <div className="pointer-events-auto overflow-hidden rounded-[2rem] border border-white/10 bg-black/45 shadow-2xl backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-amber-500 font-bold">Live Conversation</p>
-                      <p className="text-[10px] text-zinc-600 mt-0.5">Realtime karaoke transcript and saved RTDB memory</p>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-500">Live Conversation</p>
+                      <p className="mt-0.5 text-[10px] text-zinc-600">Realtime transcript saved in Firebase RTDB</p>
                     </div>
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest">
+                    <span className="text-[10px] uppercase tracking-widest text-zinc-500">
                       {historyMsgs.length} saved
                     </span>
                   </div>
 
-                  <div className="max-h-56 overflow-y-auto p-4 space-y-3">
-                    {historyMsgs.slice(-8).map((msg, i) => (
+                  <div className="max-h-44 space-y-3 overflow-y-auto p-4">
+                    {historyMsgs.slice(-6).map((msg, i) => (
                       <div key={`${msg.timestamp}-${i}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed border ${
+                        <div className={`max-w-[85%] rounded-2xl border px-4 py-2 text-sm leading-relaxed ${
                           msg.role === 'user'
-                            ? 'bg-white/5 border-white/10 text-zinc-200 rounded-tr-sm'
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-50 rounded-tl-sm'
+                            ? 'rounded-tr-sm border-cyan-400/15 bg-cyan-400/5 text-cyan-50'
+                            : 'rounded-tl-sm border-amber-500/20 bg-amber-500/10 text-amber-50'
                         }`}>
-                          <div className={`text-[8px] uppercase tracking-widest mb-1 ${msg.role === 'user' ? 'text-zinc-500' : 'text-amber-500'}`}>
+                          <div className={`mb-1 text-[8px] uppercase tracking-widest ${msg.role === 'user' ? 'text-cyan-300' : 'text-amber-500'}`}>
                             {msg.role === 'user' ? 'You' : settings.personaName}
                           </div>
                           {msg.text}
@@ -1096,16 +1305,8 @@ function MaximusAgent({
                       </div>
                     ))}
 
-                    {currentTranscript && (
-                      <KaraokeTranscript
-                        role={currentTranscript.role}
-                        text={currentTranscript.text}
-                        name={currentTranscript.role === 'user' ? 'You' : settings.personaName}
-                      />
-                    )}
-
-                    {historyMsgs.length === 0 && !currentTranscript && (
-                      <div className="text-center py-8 text-[10px] uppercase tracking-widest text-zinc-600 font-bold">
+                    {historyMsgs.length === 0 && (
+                      <div className="py-8 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
                         No live transcript yet
                       </div>
                     )}
@@ -1116,46 +1317,41 @@ function MaximusAgent({
           </AnimatePresence>
 
           <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
-            <div className="flex justify-center items-center gap-8">
+            <div className="flex items-center justify-center gap-8">
               <button
                 onClick={() => setIsMuted(p => !p)}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
-                  isMuted ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                  isMuted ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
                 }`}
               >
-                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
               </button>
 
               {!isActive ? (
-                <button
+                <StartIconMicVisualizer
+                  isActive={false}
+                  connecting={connecting}
+                  isMuted={isMuted}
+                  micLevel={0}
                   onClick={startSession}
-                  disabled={connecting}
-                  className="group relative"
-                >
-                  <div className="absolute -inset-4 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all opacity-0 group-hover:opacity-100" />
-                  <div className="relative w-20 h-20 bg-[#0A0A0B] border border-white/10 rounded-full flex items-center justify-center group-hover:border-amber-500/50 transition-all shadow-2xl">
-                    <Power className={`w-8 h-8 transition-colors ${connecting ? 'text-zinc-700' : 'text-amber-500'}`} />
-                  </div>
-                </button>
+                />
               ) : (
-                <button
+                <StartIconMicVisualizer
+                  isActive={true}
+                  connecting={connecting}
+                  isMuted={isMuted}
+                  micLevel={micLevel}
                   onClick={stopSession}
-                  className="group relative"
-                >
-                  <div className="absolute -inset-4 bg-red-500/10 rounded-full blur-xl opacity-100" />
-                  <div className="relative w-20 h-20 bg-[#0A0A0B] border border-red-500/20 rounded-full flex items-center justify-center hover:border-red-500/50 transition-all shadow-2xl">
-                    <Square className="w-6 h-6 text-red-500 fill-current" />
-                  </div>
-                </button>
+                />
               )}
 
               <button
                 onClick={() => toggleVideo()}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg border ${
-                  isVideoEnabled ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-[#0A0A0B] border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                  isVideoEnabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
                 }`}
               >
-                {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
               </button>
             </div>
 
@@ -1165,13 +1361,13 @@ function MaximusAgent({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="flex justify-center items-center gap-4"
+                  className="flex items-center justify-center gap-4"
                 >
-                  <button onClick={switchCamera} className="px-4 py-2 bg-black/60 backdrop-blur-md rounded-full border border-white/10 text-[10px] uppercase tracking-widest text-zinc-300 font-bold hover:text-white hover:border-white/30 transition-all flex items-center gap-2">
+                  <button onClick={switchCamera} className="flex items-center gap-2 rounded-full border border-white/10 bg-black/60 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-300 backdrop-blur-md transition-all hover:border-white/30 hover:text-white">
                     Flip Camera
                   </button>
-                  <button onClick={capturePhoto} className="px-4 py-2 bg-emerald-500/20 backdrop-blur-md rounded-full border border-emerald-500/30 text-[10px] uppercase tracking-widest text-emerald-500 font-bold hover:bg-emerald-500/30 transition-all flex items-center gap-2">
-                    <Camera className="w-3 h-3" /> Capture
+                  <button onClick={capturePhoto} className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-emerald-500 backdrop-blur-md transition-all hover:bg-emerald-500/30">
+                    <Camera className="h-3 w-3" /> Capture
                   </button>
                 </motion.div>
               )}
@@ -1186,34 +1382,38 @@ function MaximusAgent({
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setShowSidebar(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
             />
             <motion.div
               initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 bottom-0 w-80 bg-[#0A0A0B] border-r border-white/10 shadow-2xl z-[101] flex flex-col font-sans"
+              className="fixed bottom-0 left-0 top-0 z-[101] flex w-80 flex-col border-r border-white/10 bg-[#0A0A0B] shadow-2xl"
             >
-              <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center justify-between border-b border-white/10 p-6">
                 <div>
-                  <h2 className="text-sm font-bold text-white tracking-widest uppercase">Memory Log</h2>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Firebase RTDB</p>
+                  <h2 className="text-sm font-bold uppercase tracking-widest text-white">Memory Log</h2>
+                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Firebase RTDB</p>
                 </div>
-                <button onClick={() => setShowSidebar(false)} className="p-2 -mr-2 rounded-xl hover:bg-white/5 text-zinc-500 hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
+                <button onClick={() => setShowSidebar(false)} className="-mr-2 rounded-xl p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {historyMsgs.map((msg, i) => (
                   <div key={`${msg.timestamp}-${i}`} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <span className="text-[8px] uppercase tracking-widest text-zinc-600 mb-1">{msg.role === 'user' ? 'You' : settings.personaName}</span>
-                    <div className={`p-3 rounded-2xl max-w-[90%] text-xs leading-relaxed ${msg.role === 'user' ? 'bg-amber-500/10 text-amber-100 border border-amber-500/20 rounded-tr-sm' : 'bg-white/5 text-zinc-300 border border-white/5 rounded-tl-sm'}`}>
+                    <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">{msg.role === 'user' ? 'You' : settings.personaName}</span>
+                    <div className={`max-w-[90%] rounded-2xl p-3 text-xs leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'rounded-tr-sm border border-cyan-400/20 bg-cyan-400/10 text-cyan-100'
+                        : 'rounded-tl-sm border border-white/5 bg-white/5 text-zinc-300'
+                    }`}>
                       {msg.text}
                     </div>
                   </div>
                 ))}
 
                 {historyMsgs.length === 0 && (
-                  <div className="text-center text-zinc-600 text-[10px] tracking-widest uppercase py-10 font-bold">No Memory Buffers</div>
+                  <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">No Memory Buffers</div>
                 )}
               </div>
             </motion.div>
@@ -1225,45 +1425,45 @@ function MaximusAgent({
         {showProfile && (
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="fixed inset-0 bg-[#050505] z-[200] overflow-y-auto font-sans flex flex-col"
+            className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#050505]"
           >
-            <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-10 w-full max-w-2xl mx-auto">
+            <div className="sticky top-0 z-10 mx-auto flex w-full max-w-2xl items-center justify-between border-b border-white/10 bg-[#050505]/80 p-6 backdrop-blur-xl">
               <div>
-                <h2 className="text-sm font-bold text-white tracking-widest uppercase">Profile</h2>
-                <p className="text-[10px] text-zinc-600 uppercase tracking-widest mt-1">Voice, persona, and transcript settings</p>
+                <h2 className="text-sm font-bold uppercase tracking-widest text-white">Profile</h2>
+                <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-600">Voice, persona, and transcript settings</p>
               </div>
 
               <div className="flex gap-2">
-                <button onClick={onLogout} className="px-4 py-2 bg-red-500/10 text-red-500 text-xs font-bold uppercase tracking-widest rounded-xl hover:bg-red-500/20 active:scale-95 transition-all flex items-center gap-2">
-                  <LogOut className="w-4 h-4" /> Logout
+                <button onClick={onLogout} className="flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-2 text-xs font-bold uppercase tracking-widest text-red-500 transition-all hover:bg-red-500/20 active:scale-95">
+                  <LogOut className="h-4 w-4" /> Logout
                 </button>
                 <button
                   onClick={persistSettings}
-                  className="px-4 py-2 bg-amber-500 text-black text-xs font-bold uppercase tracking-widest rounded-xl hover:bg-amber-400 active:scale-95 transition-all flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-amber-400 active:scale-95"
                 >
-                  <Save className="w-4 h-4" /> Save
+                  <Save className="h-4 w-4" /> Save
                 </button>
-                <button onClick={() => setShowProfile(false)} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
+                <button onClick={() => setShowProfile(false)} className="rounded-xl bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white">
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 w-full max-w-2xl mx-auto p-6 flex flex-col gap-8 pb-20">
+            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-6 pb-20">
               <div className="flex flex-col items-center gap-4">
-                <div className="relative w-32 h-32 rounded-full border-2 border-white/10 bg-zinc-900 overflow-hidden flex items-center justify-center group">
+                <div className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-white/10 bg-zinc-900">
                   {settings.avatarUrl || user.photoURL ? (
-                    <img src={settings.avatarUrl || user.photoURL || ''} alt="Avatar" className="w-full h-full object-cover group-hover:opacity-50 transition-opacity" />
+                    <img src={settings.avatarUrl || user.photoURL || ''} alt="Avatar" className="h-full w-full object-cover transition-opacity group-hover:opacity-50" />
                   ) : (
-                    <div className="text-4xl text-zinc-700 font-bold">{user.displayName?.[0] || 'U'}</div>
+                    <div className="text-4xl font-bold text-zinc-700">{user.displayName?.[0] || 'U'}</div>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    <Camera className="w-8 h-8 text-white drop-shadow-md" />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                    <Camera className="h-8 w-8 text-white drop-shadow-md" />
                   </div>
                   <input
                     type="file"
                     accept="image/*"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    className="absolute inset-0 cursor-pointer opacity-0"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
@@ -1294,29 +1494,29 @@ function MaximusAgent({
                 </div>
 
                 <div className="text-center">
-                  <h3 className="text-xs uppercase tracking-widest font-bold text-zinc-300">Avatar Node</h3>
-                  <p className="text-[10px] text-zinc-600 mt-1">Tap to re-configure</p>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-300">Avatar Node</h3>
+                  <p className="mt-1 text-[10px] text-zinc-600">Tap to re-configure</p>
                 </div>
               </div>
 
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">Persona Designation</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Persona Designation</label>
                   <input
                     type="text"
                     value={settings.personaName}
                     onChange={(e) => setSettings(s => ({ ...s, personaName: e.target.value }))}
-                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl p-4 text-white font-serif text-xl focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all"
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
                     placeholder="e.g. Vep"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">Voice Alias</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Voice Alias</label>
                   <select
                     value={settings.selectedVoice}
                     onChange={(e) => setSettings(s => ({ ...s, selectedVoice: e.target.value }))}
-                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl p-4 text-white text-sm focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all"
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-sm text-white outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
                   >
                     {GEMINI_LIVE_VOICE_OPTIONS.map(v => (
                       <option key={v.id} value={v.id}>
@@ -1324,17 +1524,17 @@ function MaximusAgent({
                       </option>
                     ))}
                   </select>
-                  <p className="text-[10px] text-zinc-600 leading-relaxed">
+                  <p className="text-[10px] leading-relaxed text-zinc-600">
                     Display names are hero aliases. The saved voice id is used internally for Live API audio.
                   </p>
                 </div>
 
-                <div className="space-y-2 flex-1 flex flex-col">
-                  <label className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">System Directives</label>
+                <div className="flex flex-1 flex-col space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">System Directives</label>
                   <textarea
                     value={settings.systemPrompt}
                     onChange={(e) => setSettings(s => ({ ...s, systemPrompt: e.target.value }))}
-                    className="w-full bg-[#0A0A0B] border border-white/10 rounded-xl p-4 text-zinc-300 font-mono text-xs leading-relaxed focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all min-h-[340px] resize-y"
+                    className="min-h-[340px] w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0B] p-4 font-mono text-xs leading-relaxed text-zinc-300 outline-none transition-all focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50"
                     placeholder="Normal human voice prompt..."
                   />
                 </div>
