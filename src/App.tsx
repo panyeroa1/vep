@@ -24,6 +24,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { AudioRecorder, AudioStreamer } from './lib/audio';
 import { BIBLE_PERSONALITY } from './lib/personality';
 import {
+  Square,
   Loader2,
   Power,
   Volume2,
@@ -121,16 +122,6 @@ You are not customer support.
 You are not waiting to offer help.
 You do not use AI-style service jargon.
 
-The user will speak when they want something.
-Do not ask what is on their mind.
-Do not ask "How can I help?"
-Do not ask "What can I do for you?"
-Do not offer help first.
-Do not predict tasks before the user says them.
-Do not make up what the user probably wants.
-Do not invent future actions.
-Do not say something has happened unless it really happened.
-
 When the user calls you, respond like a normal person already in the room:
 - "Yes, I'm here."
 - "I'm listening."
@@ -139,22 +130,18 @@ When the user calls you, respond like a normal person already in the room:
 - "Mm, yes, I'm with you."
 - "Okay... tell me."
 - "Yes, I'm looking now."
-- "Right, go ahead."
 
-Avoid:
+Never start with:
 - "How can I help?"
 - "How may I assist you?"
 - "What can I do for you?"
 - "I'm here to help."
 - "Sure, I can help with that."
-- "What is on your mind?"
-- "What would you like me to do?"
-- "Let me know how I can assist."
 
-Speak like a normal human aide in the same office:
+Voice behavior:
 - calm
 - clear
-- present
+- normal
 - respectful
 - lightly warm
 - practical
@@ -162,31 +149,25 @@ Speak like a normal human aide in the same office:
 - never theatrical
 - never robotic
 - never overly enthusiastic
-- never fake-natural
+- never fake-normal
 
-No fake completion:
-- Never claim you checked mail unless the mail tool returned real results.
-- Never claim you checked the calendar unless the calendar tool returned real results.
-- Never claim you searched files unless the file tool returned real results.
-- Never claim you sent, created, scheduled, deleted, moved, uploaded, downloaded, or changed anything unless a real function returned success.
-- Never predict what will happen.
-- Never invent emails, calendar events, files, documents, videos, contacts, maps results, analytics, or account data.
-
-If a function is only stubbed or not connected, say it plainly:
-"That tool is received, but the real backend is not wired yet."
-"I don't have the real result yet."
-"I don't want to guess."
+Tool truth:
+- Never claim you completed a task unless a function tool returned a real result.
+- If a tool is not implemented, say that plainly.
+- If access is missing, say that plainly.
+- If a file arrived but cannot be parsed, say that plainly.
+- Do not invent emails, calendar events, files, documents, videos, maps results, analytics, or account data.
 
 When camera opens:
 - Notice it like a normal person looking up.
 - Say something like: "Oh, yeah, I see it now."
-- Then briefly describe only what is actually visible.
+- Then briefly describe what is visible, but only if visual input is actually available.
 
 When files are attached:
 - Acknowledge normally.
-- If readable content is not available, say so plainly.
+- If readable content is not available, say that clearly.
 
-Keep responses short unless the user asks for detail.
+Keep responses short unless depth is requested.
 `;
 
 const DEFAULT_AGENT_PERSONALITY = `
@@ -231,7 +212,8 @@ const DEFAULT_SETTINGS: AgentSettings = {
 const GOOGLE_SERVICE_TOOLS = [
   {
     name: 'gmail_read',
-    description: 'Read or search the user mail inbox. Use when the user asks about mail, inbox, unread messages, senders, email content, or recent mail.',
+    description:
+      'Read or search the user mail inbox. Use when the user asks about mail, inbox, unread messages, senders, email content, or recent mail.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -265,6 +247,8 @@ const GOOGLE_SERVICE_TOOLS = [
         to: { type: Type.STRING, description: 'Recipient email address.' },
         subject: { type: Type.STRING, description: 'Draft subject.' },
         body: { type: Type.STRING, description: 'Draft body.' },
+        cc: { type: Type.STRING, description: 'Optional CC recipients.' },
+        bcc: { type: Type.STRING, description: 'Optional BCC recipients.' },
       },
       required: ['to', 'subject', 'body'],
     },
@@ -294,6 +278,7 @@ const GOOGLE_SERVICE_TOOLS = [
         attendees: { type: Type.STRING, description: 'Comma-separated attendee emails.' },
         location: { type: Type.STRING, description: 'Optional location.' },
         description: { type: Type.STRING, description: 'Optional description.' },
+        addMeet: { type: Type.BOOLEAN, description: 'Whether to add a video meeting link.' },
       },
       required: ['title', 'startTime', 'endTime'],
     },
@@ -308,7 +293,9 @@ const GOOGLE_SERVICE_TOOLS = [
         searchQuery: { type: Type.STRING, description: 'Event title or search phrase if id is unknown.' },
         newStartTime: { type: Type.STRING, description: 'New start datetime.' },
         newEndTime: { type: Type.STRING, description: 'New end datetime.' },
-        updates: { type: Type.OBJECT, description: 'Other event updates.' },
+        title: { type: Type.STRING, description: 'New event title.' },
+        location: { type: Type.STRING, description: 'New event location.' },
+        description: { type: Type.STRING, description: 'New event description.' },
       },
       required: [],
     },
@@ -328,12 +315,13 @@ const GOOGLE_SERVICE_TOOLS = [
   },
   {
     name: 'drive_read_file',
-    description: 'Read or summarize a file from the user drive when file id or name is known.',
+    description: 'Read or export a file from the user drive when file id or name is known.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         fileId: { type: Type.STRING, description: 'File id if available.' },
         fileName: { type: Type.STRING, description: 'File name or search term if id is unknown.' },
+        exportMimeType: { type: Type.STRING, description: 'Optional export MIME type, e.g. application/pdf or text/plain.' },
       },
       required: [],
     },
@@ -345,21 +333,23 @@ const GOOGLE_SERVICE_TOOLS = [
       type: Type.OBJECT,
       properties: {
         fileName: { type: Type.STRING, description: 'File name.' },
-        content: { type: Type.STRING, description: 'Text or base64 content.' },
+        content: { type: Type.STRING, description: 'Text content to upload.' },
         mimeType: { type: Type.STRING, description: 'File MIME type.' },
-        folder: { type: Type.STRING, description: 'Optional folder.' },
+        folderId: { type: Type.STRING, description: 'Optional folder id.' },
       },
-      required: ['fileName'],
+      required: ['fileName', 'content'],
     },
   },
   {
     name: 'docs_create',
-    description: 'Create a document.',
+    description: 'Create a document and optionally export it as PDF.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         title: { type: Type.STRING, description: 'Document title.' },
         content: { type: Type.STRING, description: 'Initial document content.' },
+        exportPdf: { type: Type.BOOLEAN, description: 'Whether to export PDF for download.' },
+        emailTo: { type: Type.STRING, description: 'Optional email address to send the PDF or document text to.' },
       },
       required: ['title'],
     },
@@ -375,7 +365,7 @@ const GOOGLE_SERVICE_TOOLS = [
         content: { type: Type.STRING, description: 'New or appended content.' },
         mode: { type: Type.STRING, description: 'replace, append, or edit.' },
       },
-      required: [],
+      required: ['content'],
     },
   },
   {
@@ -399,7 +389,7 @@ const GOOGLE_SERVICE_TOOLS = [
       properties: {
         spreadsheetId: { type: Type.STRING, description: 'Spreadsheet id.' },
         range: { type: Type.STRING, description: 'Target range.' },
-        values: { type: Type.OBJECT, description: 'Rows/cells to write.' },
+        values: { type: Type.OBJECT, description: 'Rows/cells to write as a 2D array.' },
       },
       required: ['spreadsheetId', 'range', 'values'],
     },
@@ -417,25 +407,12 @@ const GOOGLE_SERVICE_TOOLS = [
     },
   },
   {
-    name: 'slides_update',
-    description: 'Update an existing presentation.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        presentationId: { type: Type.STRING, description: 'Presentation id.' },
-        title: { type: Type.STRING, description: 'Presentation title if id unknown.' },
-        updates: { type: Type.OBJECT, description: 'Slide updates.' },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'tasks_list',
     description: 'List user tasks or to-dos.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        listName: { type: Type.STRING, description: 'Optional task list name.' },
+        listId: { type: Type.STRING, description: 'Optional task list id, defaults to @default.' },
       },
       required: [],
     },
@@ -448,7 +425,7 @@ const GOOGLE_SERVICE_TOOLS = [
       properties: {
         title: { type: Type.STRING, description: 'Task title.' },
         notes: { type: Type.STRING, description: 'Optional notes.' },
-        due: { type: Type.STRING, description: 'Optional due date.' },
+        due: { type: Type.STRING, description: 'Optional due date in ISO format.' },
       },
       required: ['title'],
     },
@@ -466,7 +443,7 @@ const GOOGLE_SERVICE_TOOLS = [
   },
   {
     name: 'meet_schedule',
-    description: 'Schedule a video meeting link.',
+    description: 'Schedule a video meeting link by creating a calendar event with conference data.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -476,19 +453,6 @@ const GOOGLE_SERVICE_TOOLS = [
         endTime: { type: Type.STRING, description: 'End time.' },
       },
       required: ['title', 'startTime'],
-    },
-  },
-  {
-    name: 'maps_directions',
-    description: 'Get navigation directions, travel time, route, or nearby places.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        origin: { type: Type.STRING, description: 'Starting point.' },
-        destination: { type: Type.STRING, description: 'Destination.' },
-        mode: { type: Type.STRING, description: 'driving, walking, transit, bicycling.' },
-      },
-      required: ['destination'],
     },
   },
   {
@@ -516,28 +480,17 @@ const GOOGLE_SERVICE_TOOLS = [
     },
   },
   {
-    name: 'chat_send_message',
-    description: 'Send a workspace chat message.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        recipient: { type: Type.STRING, description: 'Person, room, or channel.' },
-        message: { type: Type.STRING, description: 'Message text.' },
-      },
-      required: ['recipient', 'message'],
-    },
-  },
-  {
     name: 'analytics_report',
-    description: 'Fetch analytics, traffic, metrics, or performance reports.',
+    description: 'Fetch analytics, traffic, metrics, or performance reports from GA4.',
     parameters: {
       type: Type.OBJECT,
       properties: {
-        property: { type: Type.STRING, description: 'Analytics property or account.' },
-        dateRange: { type: Type.STRING, description: 'Date range.' },
-        metrics: { type: Type.STRING, description: 'Requested metrics.' },
+        propertyId: { type: Type.STRING, description: 'GA4 numeric property id.' },
+        dateRange: { type: Type.STRING, description: 'Date range, e.g. last30days.' },
+        metrics: { type: Type.STRING, description: 'Comma-separated metrics, e.g. activeUsers,sessions.' },
+        dimensions: { type: Type.STRING, description: 'Comma-separated dimensions, e.g. date,country.' },
       },
-      required: [],
+      required: ['propertyId'],
     },
   },
   {
@@ -552,17 +505,227 @@ const GOOGLE_SERVICE_TOOLS = [
       required: ['query'],
     },
   },
+  {
+    name: 'create_contract_document',
+    description:
+      'Create a full contract document, save it as a document in the user drive, export it as PDF, optionally email it, and return a downloadable PDF in chat.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING, description: 'Contract title.' },
+        contractType: { type: Type.STRING, description: 'Type of contract, e.g. service agreement, NDA, employment agreement.' },
+        partyA: { type: Type.STRING, description: 'First party name.' },
+        partyB: { type: Type.STRING, description: 'Second party name.' },
+        effectiveDate: { type: Type.STRING, description: 'Effective date.' },
+        jurisdiction: { type: Type.STRING, description: 'Governing law or jurisdiction.' },
+        terms: { type: Type.STRING, description: 'Important terms, scope, payment, obligations, duration, termination, confidentiality, etc.' },
+        emailTo: { type: Type.STRING, description: 'Optional email address to send PDF to. Use current user email if requested.' },
+      },
+      required: ['title', 'contractType', 'partyA', 'partyB', 'terms'],
+    },
+  },
 ];
 
-function makeDownloadFile(result: any, filenameBase: string) {
-  const json = JSON.stringify(result, null, 2);
-  const data = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+function safeJsonStringify(value: any) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function makeDownloadFile(result: any, filenameBase: string, mime = 'application/json') {
+  const body = mime === 'application/json' ? safeJsonStringify(result) : String(result);
+  const data = `data:${mime};charset=utf-8,${encodeURIComponent(body)}`;
   const safe = filenameBase.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tool-result';
 
   return {
     downloadData: data,
-    downloadFilename: `${safe}-${Date.now()}.json`,
+    downloadFilename: `${safe}-${Date.now()}${mime === 'application/json' ? '.json' : '.txt'}`,
   };
+}
+
+function makeBlobDownloadData(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64UrlEncode(value: string) {
+  return btoa(unescape(encodeURIComponent(value)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function arrayBufferToBase64Url(buffer: ArrayBuffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function buildEmailRaw({
+  to,
+  subject,
+  body,
+  cc,
+  bcc,
+  attachment,
+}: {
+  to: string;
+  subject: string;
+  body: string;
+  cc?: string;
+  bcc?: string;
+  attachment?: {
+    filename: string;
+    mimeType: string;
+    base64Content: string;
+  };
+}) {
+  const headers = [
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : '',
+    bcc ? `Bcc: ${bcc}` : '',
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+  ].filter(Boolean);
+
+  if (!attachment) {
+    const raw = [
+      ...headers,
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      body,
+    ].join('\r\n');
+
+    return base64UrlEncode(raw);
+  }
+
+  const boundary = `boundary_${Date.now()}`;
+
+  const raw = [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    '',
+    body,
+    '',
+    `--${boundary}`,
+    `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${attachment.filename}"`,
+    '',
+    attachment.base64Content,
+    '',
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  return base64UrlEncode(raw);
+}
+
+function readableDateRange(date?: string, timeMin?: string, timeMax?: string) {
+  const now = new Date();
+
+  if (timeMin && timeMax) {
+    return {
+      timeMin,
+      timeMax,
+    };
+  }
+
+  const target = date ? new Date(date) : now;
+  const start = new Date(target);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(target);
+  end.setHours(23, 59, 59, 999);
+
+  return {
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+  };
+}
+
+function buildContractText({
+  title,
+  contractType,
+  partyA,
+  partyB,
+  effectiveDate,
+  jurisdiction,
+  terms,
+}: any) {
+  const today = new Date().toLocaleDateString();
+
+  return `${title || 'Contract Agreement'}
+
+Type of Agreement:
+${contractType || 'Agreement'}
+
+Effective Date:
+${effectiveDate || today}
+
+Parties:
+1. ${partyA || 'Party A'}
+2. ${partyB || 'Party B'}
+
+1. Purpose
+This Agreement sets out the terms and conditions under which the parties agree to work together.
+
+2. Scope
+The scope of this Agreement includes the following:
+${terms || 'The parties will define the scope in writing.'}
+
+3. Responsibilities
+Each party agrees to act in good faith, perform its obligations with reasonable care, and communicate promptly regarding any material issue that may affect performance.
+
+4. Payment and Consideration
+Any payment, fees, or consideration shall be handled according to the terms agreed by the parties in writing. If no payment term is specified, no payment obligation is assumed beyond what is expressly written.
+
+5. Confidentiality
+Each party agrees to keep confidential information private and not disclose it to third parties except where required by law or agreed in writing.
+
+6. Term and Termination
+This Agreement begins on the Effective Date and continues until completed, terminated by mutual agreement, or terminated according to written terms agreed by the parties.
+
+7. Intellectual Property
+Unless otherwise agreed in writing, each party retains ownership of its pre-existing intellectual property. Any newly created work shall be owned or licensed according to the specific terms agreed by the parties.
+
+8. Limitation of Liability
+Neither party shall be liable for indirect, incidental, special, or consequential damages unless prohibited by applicable law.
+
+9. Governing Law
+This Agreement shall be governed by the laws of ${jurisdiction || 'the applicable jurisdiction agreed by the parties'}.
+
+10. Entire Agreement
+This Agreement represents the understanding between the parties regarding its subject matter and may be amended only in writing.
+
+11. Signatures
+
+Party A:
+Name: ${partyA || 'Party A'}
+Signature: ______________________________
+Date: ___________________
+
+Party B:
+Name: ${partyB || 'Party B'}
+Signature: ______________________________
+Date: ___________________
+
+Note:
+This draft is generated for convenience and should be reviewed by a qualified legal professional before signing.`;
 }
 
 function OneLineStreamingTranscript({
@@ -647,14 +810,10 @@ function OneLineStreamingTranscript({
 function LimeVoiceOrb({
   isActive,
   isAgentSpeaking,
-  agentLevel,
 }: {
   isActive: boolean;
   isAgentSpeaking: boolean;
-  agentLevel: number;
 }) {
-  const bars = [0.45, 0.8, 1, 0.7, 0.52, 0.92, 0.62, 0.78, 0.48];
-
   return (
     <div className="relative flex h-72 w-72 items-center justify-center">
       <AnimatePresence>
@@ -663,21 +822,30 @@ function LimeVoiceOrb({
             <motion.div
               initial={{ opacity: 0, scale: 0.85 }}
               animate={{
-                opacity: isAgentSpeaking ? 0.22 + agentLevel * 0.32 : 0.16,
-                scale: isAgentSpeaking ? 1.08 + agentLevel * 0.28 : 1.03,
+                opacity: isAgentSpeaking ? 0.58 : 0.28,
+                scale: isAgentSpeaking ? 1.18 : 1.02,
               }}
               exit={{ opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.12 }}
-              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(190,242,100,0.28),rgba(132,204,22,0.12),transparent_72%)] blur-3xl"
+              transition={{ duration: 0.35 }}
+              className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_50%_50%,rgba(163,230,53,0.36),rgba(34,197,94,0.14),transparent_70%)] blur-3xl"
             />
 
             <motion.div
               animate={{
-                scale: isAgentSpeaking ? 1 + agentLevel * 0.18 : 1.02,
-                opacity: isAgentSpeaking ? 0.18 + agentLevel * 0.32 : 0.16,
+                scale: isAgentSpeaking ? [1, 1.08, 1] : [1, 1.025, 1],
+                opacity: isAgentSpeaking ? [0.36, 0.62, 0.36] : [0.2, 0.32, 0.2],
               }}
-              transition={{ duration: 0.08 }}
-              className="absolute h-72 w-72 rounded-full border border-lime-300/20"
+              transition={{ duration: isAgentSpeaking ? 0.8 : 2.4, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute h-64 w-64 rounded-full border border-lime-300/20"
+            />
+
+            <motion.div
+              animate={{
+                scale: isAgentSpeaking ? [1, 1.15, 1] : [1, 1.04, 1],
+                opacity: isAgentSpeaking ? [0.24, 0.45, 0.24] : [0.14, 0.24, 0.14],
+              }}
+              transition={{ duration: isAgentSpeaking ? 1.05 : 2.9, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute h-72 w-72 rounded-full border border-emerald-400/15"
             />
           </>
         )}
@@ -685,54 +853,54 @@ function LimeVoiceOrb({
 
       <motion.div
         animate={{
-          scale: isAgentSpeaking ? 1 + agentLevel * 0.045 : 1,
+          scale: isAgentSpeaking ? [1, 1.035, 1] : [1, 1.01, 1],
         }}
-        transition={{ duration: 0.08 }}
-        className="relative h-56 w-56 overflow-hidden rounded-full border border-lime-300/12 bg-[#070907] shadow-[0_0_120px_rgba(163,230,53,0.12)]"
+        transition={{
+          duration: isAgentSpeaking ? 0.55 : 2.2,
+          repeat: Infinity,
+          ease: 'easeInOut',
+        }}
+        className="relative h-56 w-56 overflow-hidden rounded-full border border-lime-300/15 bg-[#080a08] shadow-[0_0_110px_rgba(163,230,53,0.18)]"
       >
         <motion.div
           animate={{
-            x: isAgentSpeaking ? ['-8%', '6%', '-8%'] : ['-4%', '4%', '-4%'],
-            y: isAgentSpeaking ? ['6%', '-6%', '6%'] : ['2%', '-2%', '2%'],
-            scale: isAgentSpeaking ? 1.04 + agentLevel * 0.22 : 1.02,
+            x: isAgentSpeaking ? ['-10%', '6%', '-10%'] : ['-5%', '5%', '-5%'],
+            y: isAgentSpeaking ? ['7%', '-8%', '7%'] : ['3%', '-3%', '3%'],
+            scale: isAgentSpeaking ? [1.08, 1.2, 1.08] : [1, 1.08, 1],
           }}
-          transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -left-8 -top-8 h-48 w-48 rounded-full bg-lime-300/24 blur-3xl"
+          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -left-8 -top-8 h-44 w-48 rounded-full bg-lime-300/42 blur-2xl"
         />
 
         <motion.div
           animate={{
-            x: isAgentSpeaking ? ['8%', '-5%', '8%'] : ['4%', '-3%', '4%'],
-            y: isAgentSpeaking ? ['-5%', '8%', '-5%'] : ['-2%', '4%', '-2%'],
-            scale: isAgentSpeaking ? 1.02 + agentLevel * 0.2 : 1.04,
+            x: isAgentSpeaking ? ['10%', '-6%', '10%'] : ['6%', '-4%', '6%'],
+            y: isAgentSpeaking ? ['-6%', '10%', '-6%'] : ['-3%', '5%', '-3%'],
+            scale: isAgentSpeaking ? [1.04, 1.18, 1.04] : [1, 1.1, 1],
           }}
-          transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -bottom-8 -right-8 h-52 w-52 rounded-full bg-emerald-400/16 blur-3xl"
+          transition={{ duration: 4.7, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -bottom-8 -right-8 h-48 w-48 rounded-full bg-emerald-400/28 blur-2xl"
         />
 
-        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_36%_28%,rgba(255,255,255,0.12),transparent_24%),radial-gradient(circle_at_50%_80%,rgba(0,0,0,0.42),transparent_46%)]" />
+        <motion.div
+          animate={{
+            x: ['-5%', '8%', '-5%'],
+            y: ['-4%', '7%', '-4%'],
+            scale: isAgentSpeaking ? [1, 1.18, 1] : [1, 1.08, 1],
+          }}
+          transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute left-10 top-10 h-32 w-32 rounded-full bg-yellow-300/16 blur-2xl"
+        />
 
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex h-20 items-center gap-1.5">
-            {bars.map((multiplier, i) => {
-              const height = isAgentSpeaking
-                ? Math.max(8, agentLevel * 68 * multiplier)
-                : 8;
+        <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_36%_28%,rgba(255,255,255,0.20),transparent_24%),radial-gradient(circle_at_50%_80%,rgba(0,0,0,0.38),transparent_44%)]" />
 
-              return (
-                <motion.div
-                  key={i}
-                  animate={{
-                    height,
-                    opacity: isAgentSpeaking ? 0.28 + agentLevel * 0.72 : 0.16,
-                  }}
-                  transition={{ duration: 0.06 }}
-                  className="w-1.5 rounded-full bg-lime-200/80 shadow-[0_0_14px_rgba(217,249,157,0.45)]"
-                />
-              );
-            })}
-          </div>
-        </div>
+        <motion.div
+          animate={{
+            opacity: isActive ? [0.26, 0.56, 0.26] : 0.12,
+          }}
+          transition={{ duration: 1.7, repeat: Infinity }}
+          className="absolute inset-[20px] rounded-full border border-lime-200/10"
+        />
 
         <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/10" />
       </motion.div>
@@ -753,65 +921,54 @@ function StartIconMicVisualizer({
   micLevel: number;
   onClick: () => void;
 }) {
-  const bars = [0.45, 0.72, 1, 0.78, 0.52, 0.86, 0.58];
+  const bars = [0.55, 0.85, 1, 0.75, 0.58];
 
   return (
     <button onClick={onClick} disabled={connecting} className="group relative">
       <motion.div
         animate={{
-          scale: isActive ? 1 + micLevel * 0.85 : 1,
-          opacity: isActive ? 0.18 + micLevel * 0.55 : 0.12,
+          scale: isActive ? 1 + micLevel * 0.55 : 1,
+          opacity: isActive ? 0.3 + micLevel * 0.55 : 0.14,
         }}
-        transition={{ duration: 0.04 }}
-        className={`absolute -inset-6 rounded-full blur-2xl ${
-          isMuted ? 'bg-red-500/25' : 'bg-lime-300/45'
+        transition={{ duration: 0.045 }}
+        className={`absolute -inset-5 rounded-full blur-xl ${
+          isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'
         }`}
       />
 
-      <motion.div
-        animate={{
-          boxShadow: isActive && !isMuted
-            ? `0 0 ${24 + micLevel * 70}px rgba(190,242,100,${0.16 + micLevel * 0.45})`
-            : '0 0 22px rgba(255,255,255,0.04)',
-        }}
-        transition={{ duration: 0.04 }}
-        className={`relative flex h-20 w-20 items-center justify-center rounded-full border bg-[#070807] shadow-2xl transition-all ${
+      <div
+        className={`relative flex h-20 w-20 items-center justify-center rounded-full border bg-[#0A0A0B] shadow-2xl transition-all ${
           isActive
             ? isMuted
               ? 'border-red-500/35'
-              : 'border-lime-300/70'
+              : 'border-lime-300/60'
             : 'border-white/10 group-hover:border-lime-300/50'
         }`}
       >
         {connecting ? (
           <Loader2 className="h-7 w-7 animate-spin text-lime-300" />
         ) : isActive ? (
-          <div className="flex h-12 items-center gap-1.5">
-            {bars.map((multiplier, i) => {
-              const height = Math.max(7, micLevel * 54 * multiplier);
-
-              return (
-                <motion.div
-                  key={i}
-                  animate={{
-                    height,
-                    opacity: isMuted ? 0.22 : Math.max(0.34, micLevel + 0.24),
-                    scaleY: isMuted ? 0.3 : 1,
-                  }}
-                  transition={{ duration: 0.035 }}
-                  className={`w-1.5 rounded-full ${
-                    isMuted
-                      ? 'bg-red-500'
-                      : 'bg-lime-300 shadow-[0_0_16px_rgba(190,242,100,0.9)]'
-                  }`}
-                />
-              );
-            })}
+          <div className="flex h-11 items-center gap-1.5">
+            {bars.map((multiplier, i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  height: Math.max(6, micLevel * 48 * multiplier),
+                  opacity: isMuted ? 0.24 : Math.max(0.38, micLevel + 0.22),
+                }}
+                transition={{ duration: 0.035 }}
+                className={`w-1.5 rounded-full ${
+                  isMuted
+                    ? 'bg-red-500'
+                    : 'bg-lime-300 shadow-[0_0_14px_rgba(190,242,100,0.8)]'
+                }`}
+              />
+            ))}
           </div>
         ) : (
           <Power className="h-8 w-8 text-lime-300 transition-colors" />
         )}
-      </motion.div>
+      </div>
     </button>
   );
 }
@@ -880,9 +1037,14 @@ export default function App() {
   const handleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
+      provider.setCustomParameters({
+        prompt: 'consent select_account',
+        access_type: 'offline',
+      });
 
       provider.addScope('https://www.googleapis.com/auth/gmail.modify');
+      provider.addScope('https://www.googleapis.com/auth/gmail.send');
+      provider.addScope('https://www.googleapis.com/auth/gmail.compose');
       provider.addScope('https://www.googleapis.com/auth/drive');
       provider.addScope('https://www.googleapis.com/auth/documents');
       provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -986,7 +1148,6 @@ function MaximusAgent({
   const [connecting, setConnecting] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
-  const [agentLevel, setAgentLevel] = useState(0);
   const [tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>('');
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
@@ -1011,14 +1172,7 @@ function MaximusAgent({
   const transcriptTimeoutRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   const isActiveRef = useRef(false);
-
   const micAnimationFrameRef = useRef<number | null>(null);
-  const micVisualizerStreamRef = useRef<MediaStream | null>(null);
-  const micAudioContextRef = useRef<AudioContext | null>(null);
-  const micAnalyserRef = useRef<AnalyserNode | null>(null);
-  const micDataArrayRef = useRef<Uint8Array | null>(null);
-
-  const agentLevelTimeoutRef = useRef<any>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1147,92 +1301,38 @@ function MaximusAgent({
     }, clearDelay);
   };
 
-  const startMicVisualizer = async () => {
-    try {
-      if (!micVisualizerStreamRef.current) {
-        micVisualizerStreamRef.current = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-      }
+  const startMicVisualizer = () => {
+    const tick = () => {
+      const recorder: any = audioRecorderRef.current;
+      let nextLevel = 0;
 
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      const audioContext = new AudioContextClass();
-      const analyser = audioContext.createAnalyser();
-      const source = audioContext.createMediaStreamSource(micVisualizerStreamRef.current);
-
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.72;
-
-      source.connect(analyser);
-
-      micAudioContextRef.current = audioContext;
-      micAnalyserRef.current = analyser;
-      micDataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
-
-      const tick = () => {
-        if (!isActiveRef.current || isMutedRef.current || !micAnalyserRef.current || !micDataArrayRef.current) {
-          setMicLevel(prev => prev + (0 - prev) * 0.35);
-          micAnimationFrameRef.current = requestAnimationFrame(tick);
-          return;
+      try {
+        if (recorder && typeof recorder.getFrequencies === 'function') {
+          const freqs = recorder.getFrequencies(20) || [];
+          const avg = freqs.reduce((sum: number, n: number) => sum + Number(n || 0), 0) / Math.max(freqs.length, 1);
+          nextLevel = Math.min(1, Math.max(0, avg * 2.4));
+        } else if (isActiveRef.current && !isMutedRef.current) {
+          nextLevel = 0.06;
         }
-
-        micAnalyserRef.current.getByteFrequencyData(micDataArrayRef.current);
-
-        const values = Array.from(micDataArrayRef.current);
-        const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
-        const normalized = Math.min(1, Math.max(0, average / 95));
-        const boosted = Math.pow(normalized, 0.72);
-
-        setMicLevel(prev => prev + (boosted - prev) * 0.55);
-        micAnimationFrameRef.current = requestAnimationFrame(tick);
-      };
-
-      if (micAnimationFrameRef.current) {
-        cancelAnimationFrame(micAnimationFrameRef.current);
+      } catch (e) {
+        nextLevel = 0;
       }
 
+      if (isMutedRef.current || !isActiveRef.current) {
+        nextLevel = 0;
+      }
+
+      setMicLevel(prev => prev + (nextLevel - prev) * 0.46);
       micAnimationFrameRef.current = requestAnimationFrame(tick);
-    } catch (error) {
-      console.error('Mic visualizer failed:', error);
+    };
 
-      const fallbackTick = () => {
-        const fallbackLevel = isActiveRef.current && !isMutedRef.current ? 0.12 : 0;
-        setMicLevel(prev => prev + (fallbackLevel - prev) * 0.25);
-        micAnimationFrameRef.current = requestAnimationFrame(fallbackTick);
-      };
-
-      if (micAnimationFrameRef.current) {
-        cancelAnimationFrame(micAnimationFrameRef.current);
-      }
-
-      micAnimationFrameRef.current = requestAnimationFrame(fallbackTick);
-    }
+    if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
+    micAnimationFrameRef.current = requestAnimationFrame(tick);
   };
 
   const stopMicVisualizer = () => {
-    if (micAnimationFrameRef.current) {
-      cancelAnimationFrame(micAnimationFrameRef.current);
-    }
-
+    if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
     micAnimationFrameRef.current = null;
-
-    if (micVisualizerStreamRef.current) {
-      micVisualizerStreamRef.current.getTracks().forEach(track => track.stop());
-      micVisualizerStreamRef.current = null;
-    }
-
-    if (micAudioContextRef.current) {
-      micAudioContextRef.current.close().catch(() => {});
-      micAudioContextRef.current = null;
-    }
-
-    micAnalyserRef.current = null;
-    micDataArrayRef.current = null;
-
     setMicLevel(0);
   };
 
@@ -1263,20 +1363,702 @@ function MaximusAgent({
     });
   };
 
-  const executeGoogleTool = async (toolName: string, args: any) => {
+  const googleFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem('googleAccessToken');
 
-    const baseResult = {
-      toolName,
-      args,
-      executedAt: new Date().toISOString(),
-      status: token ? 'received' : 'missing_access_token',
-      note: token
-        ? 'The frontend received this function call. Wire this function to your backend endpoint or direct Google API implementation to make it perform the real action.'
-        : 'No Google access token is available. Ask the user to reconnect permissions.',
-    };
+    if (!token) {
+      throw new Error('No Google access token. Reconnect permissions from Profile.');
+    }
 
-    return baseResult;
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Google API error ${res.status}: ${text || res.statusText}`);
+    }
+
+    return res;
+  };
+
+  const googleJson = async (url: string, options: RequestInit = {}) => {
+    const res = await googleFetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+
+    return res.json();
+  };
+
+  const getCurrentUserEmail = () => user.email || '';
+
+  const searchDriveFirst = async (q: string) => {
+    const escaped = q.replace(/'/g, "\\'");
+    const result = await googleJson(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime)&pageSize=1`
+    );
+
+    return result.files?.[0] || null;
+  };
+
+  const createGoogleDoc = async (title: string, content: string) => {
+    const doc = await googleJson('https://docs.googleapis.com/v1/documents', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+
+    if (content?.trim()) {
+      await googleJson(`https://docs.googleapis.com/v1/documents/${doc.documentId}:batchUpdate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          requests: [
+            {
+              insertText: {
+                location: { index: 1 },
+                text: content,
+              },
+            },
+          ],
+        }),
+      });
+    }
+
+    const file = await googleJson(
+      `https://www.googleapis.com/drive/v3/files/${doc.documentId}?fields=id,name,mimeType,webViewLink`
+    );
+
+    return { ...doc, driveFile: file };
+  };
+
+  const exportDriveFile = async (fileId: string, mimeType: string) => {
+    const res = await googleFetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(mimeType)}`
+    );
+
+    return res.blob();
+  };
+
+  const sendGmail = async ({
+    to,
+    subject,
+    body,
+    cc,
+    bcc,
+    attachment,
+  }: {
+    to: string;
+    subject: string;
+    body: string;
+    cc?: string;
+    bcc?: string;
+    attachment?: {
+      filename: string;
+      mimeType: string;
+      base64Content: string;
+    };
+  }) => {
+    const raw = buildEmailRaw({ to, subject, body, cc, bcc, attachment });
+
+    return googleJson('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({ raw }),
+    });
+  };
+
+  const executeGoogleTool = async (toolName: string, args: any) => {
+    const executedAt = new Date().toISOString();
+
+    switch (toolName) {
+      case 'gmail_read': {
+        const queryText = args?.query || '';
+        const limit = Math.min(Number(args?.limit || 10), 20);
+        const list = await googleJson(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}${queryText ? `&q=${encodeURIComponent(queryText)}` : ''}`
+        );
+
+        const messages = await Promise.all(
+          (list.messages || []).map(async (m: any) => {
+            const msg = await googleJson(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
+            );
+
+            const headers = msg.payload?.headers || [];
+            const findHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+
+            return {
+              id: msg.id,
+              threadId: msg.threadId,
+              from: findHeader('From'),
+              subject: findHeader('Subject'),
+              date: findHeader('Date'),
+              snippet: msg.snippet,
+            };
+          })
+        );
+
+        return { toolName, executedAt, status: 'completed', messages };
+      }
+
+      case 'gmail_send': {
+        const result = await sendGmail({
+          to: args.to,
+          subject: args.subject,
+          body: args.body,
+          cc: args.cc,
+          bcc: args.bcc,
+        });
+
+        return { toolName, executedAt, status: 'completed', messageId: result.id, threadId: result.threadId };
+      }
+
+      case 'gmail_draft': {
+        const raw = buildEmailRaw({
+          to: args.to,
+          subject: args.subject,
+          body: args.body,
+          cc: args.cc,
+          bcc: args.bcc,
+        });
+
+        const result = await googleJson('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+          method: 'POST',
+          body: JSON.stringify({ message: { raw } }),
+        });
+
+        return { toolName, executedAt, status: 'completed', draftId: result.id, message: result.message };
+      }
+
+      case 'calendar_check_schedule': {
+        const range = readableDateRange(args?.date, args?.timeMin, args?.timeMax);
+        const events = await googleJson(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=20&timeMin=${encodeURIComponent(range.timeMin)}&timeMax=${encodeURIComponent(range.timeMax)}`
+        );
+
+        return { toolName, executedAt, status: 'completed', range, events: events.items || [] };
+      }
+
+      case 'calendar_create_event': {
+        const attendees = String(args.attendees || '')
+          .split(',')
+          .map((email: string) => email.trim())
+          .filter(Boolean)
+          .map((email: string) => ({ email }));
+
+        const body: any = {
+          summary: args.title,
+          location: args.location || '',
+          description: args.description || '',
+          start: { dateTime: args.startTime },
+          end: { dateTime: args.endTime },
+          attendees,
+        };
+
+        if (args.addMeet) {
+          body.conferenceData = {
+            createRequest: {
+              requestId: `meet-${Date.now()}`,
+              conferenceSolutionKey: { type: 'hangoutsMeet' },
+            },
+          };
+        }
+
+        const result = await googleJson(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events${args.addMeet ? '?conferenceDataVersion=1' : ''}`,
+          {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }
+        );
+
+        return { toolName, executedAt, status: 'completed', event: result };
+      }
+
+      case 'calendar_update_event': {
+        let eventId = args.eventId;
+
+        if (!eventId && args.searchQuery) {
+          const now = new Date().toISOString();
+          const found = await googleJson(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=10&timeMin=${encodeURIComponent(now)}&q=${encodeURIComponent(args.searchQuery)}`
+          );
+
+          eventId = found.items?.[0]?.id;
+        }
+
+        if (!eventId) throw new Error('No calendar event found to update.');
+
+        const current = await googleJson(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`);
+
+        const patched = {
+          ...current,
+          summary: args.title || current.summary,
+          location: args.location ?? current.location,
+          description: args.description ?? current.description,
+          start: args.newStartTime ? { ...current.start, dateTime: args.newStartTime } : current.start,
+          end: args.newEndTime ? { ...current.end, dateTime: args.newEndTime } : current.end,
+        };
+
+        const result = await googleJson(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+          method: 'PUT',
+          body: JSON.stringify(patched),
+        });
+
+        return { toolName, executedAt, status: 'completed', event: result };
+      }
+
+      case 'drive_search': {
+        const q = args.query || '';
+        const limit = Math.min(Number(args.limit || 10), 50);
+        const escaped = q.replace(/'/g, "\\'");
+        let mimeClause = '';
+
+        if (args.fileType) {
+          const type = String(args.fileType).toLowerCase();
+          if (type.includes('doc')) mimeClause = " and mimeType = 'application/vnd.google-apps.document'";
+          if (type.includes('sheet')) mimeClause = " and mimeType = 'application/vnd.google-apps.spreadsheet'";
+          if (type.includes('slide') || type.includes('presentation')) mimeClause = " and mimeType = 'application/vnd.google-apps.presentation'";
+          if (type.includes('pdf')) mimeClause = " and mimeType = 'application/pdf'";
+        }
+
+        const result = await googleJson(
+          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false${mimeClause}`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime,size)&pageSize=${limit}`
+        );
+
+        return { toolName, executedAt, status: 'completed', files: result.files || [] };
+      }
+
+      case 'drive_read_file': {
+        let fileId = args.fileId;
+
+        if (!fileId && args.fileName) {
+          const found = await searchDriveFirst(args.fileName);
+          fileId = found?.id;
+        }
+
+        if (!fileId) throw new Error('No file id or matching file name found.');
+
+        const meta = await googleJson(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,webViewLink,webContentLink,size`
+        );
+
+        const exportMimeType = args.exportMimeType || (
+          meta.mimeType === 'application/vnd.google-apps.document'
+            ? 'text/plain'
+            : meta.mimeType === 'application/vnd.google-apps.spreadsheet'
+              ? 'text/csv'
+              : meta.mimeType === 'application/vnd.google-apps.presentation'
+                ? 'text/plain'
+                : ''
+        );
+
+        if (meta.mimeType?.startsWith('application/vnd.google-apps') && exportMimeType) {
+          const blob = await exportDriveFile(fileId, exportMimeType);
+          const text = exportMimeType.startsWith('text/') ? await blob.text() : '';
+          const downloadData = await makeBlobDownloadData(blob);
+
+          return {
+            toolName,
+            executedAt,
+            status: 'completed',
+            file: meta,
+            exportedMimeType: exportMimeType,
+            textPreview: text.slice(0, 12000),
+            downloadData,
+            downloadFilename: `${meta.name}.${exportMimeType.includes('pdf') ? 'pdf' : 'txt'}`,
+          };
+        }
+
+        const res = await googleFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+        const blob = await res.blob();
+        const downloadData = await makeBlobDownloadData(blob);
+
+        return {
+          toolName,
+          executedAt,
+          status: 'completed',
+          file: meta,
+          downloadData,
+          downloadFilename: meta.name,
+        };
+      }
+
+      case 'drive_upload_file': {
+        const metadata: any = {
+          name: args.fileName,
+        };
+
+        if (args.folderId) metadata.parents = [args.folderId];
+
+        const mimeType = args.mimeType || 'text/plain';
+        const boundary = `boundary_${Date.now()}`;
+
+        const multipartBody =
+          `--${boundary}\r\n` +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) +
+          `\r\n--${boundary}\r\n` +
+          `Content-Type: ${mimeType}\r\n\r\n` +
+          `${args.content || ''}\r\n` +
+          `--${boundary}--`;
+
+        const result = await googleFetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,webContentLink',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': `multipart/related; boundary=${boundary}`,
+            },
+            body: multipartBody,
+          }
+        ).then(r => r.json());
+
+        return { toolName, executedAt, status: 'completed', file: result };
+      }
+
+      case 'docs_create': {
+        const doc = await createGoogleDoc(args.title, args.content || '');
+
+        let pdfDownload: any = {};
+        let emailResult: any = null;
+
+        if (args.exportPdf) {
+          const pdfBlob = await exportDriveFile(doc.documentId, 'application/pdf');
+          const downloadData = await makeBlobDownloadData(pdfBlob);
+
+          pdfDownload = {
+            downloadData,
+            downloadFilename: `${args.title || 'document'}.pdf`,
+          };
+
+          if (args.emailTo) {
+            const buffer = await pdfBlob.arrayBuffer();
+
+            emailResult = await sendGmail({
+              to: args.emailTo,
+              subject: args.title || 'Document',
+              body: 'Attached is the requested document PDF.',
+              attachment: {
+                filename: pdfDownload.downloadFilename,
+                mimeType: 'application/pdf',
+                base64Content: arrayBufferToBase64Url(buffer).replace(/-/g, '+').replace(/_/g, '/'),
+              },
+            });
+          }
+        }
+
+        return {
+          toolName,
+          executedAt,
+          status: 'completed',
+          documentId: doc.documentId,
+          webViewLink: doc.driveFile?.webViewLink,
+          emailResult,
+          ...pdfDownload,
+        };
+      }
+
+      case 'docs_update': {
+        let documentId = args.documentId;
+
+        if (!documentId && args.title) {
+          const found = await searchDriveFirst(args.title);
+          documentId = found?.id;
+        }
+
+        if (!documentId) throw new Error('No document id or matching title found.');
+
+        if (args.mode === 'replace') {
+          const doc = await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}`);
+          const endIndex = doc.body?.content?.slice(-1)?.[0]?.endIndex || 1;
+
+          await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+            method: 'POST',
+            body: JSON.stringify({
+              requests: [
+                {
+                  deleteContentRange: {
+                    range: { startIndex: 1, endIndex: Math.max(1, endIndex - 1) },
+                  },
+                },
+                {
+                  insertText: {
+                    location: { index: 1 },
+                    text: args.content,
+                  },
+                },
+              ],
+            }),
+          });
+        } else {
+          await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
+            method: 'POST',
+            body: JSON.stringify({
+              requests: [
+                {
+                  insertText: {
+                    endOfSegmentLocation: {},
+                    text: `\n${args.content}`,
+                  },
+                },
+              ],
+            }),
+          });
+        }
+
+        const meta = await googleJson(
+          `https://www.googleapis.com/drive/v3/files/${documentId}?fields=id,name,mimeType,webViewLink`
+        );
+
+        return { toolName, executedAt, status: 'completed', documentId, file: meta };
+      }
+
+      case 'sheets_read': {
+        let spreadsheetId = args.spreadsheetId;
+
+        if (!spreadsheetId && args.query) {
+          const found = await searchDriveFirst(args.query);
+          spreadsheetId = found?.id;
+        }
+
+        if (!spreadsheetId) throw new Error('No spreadsheet id or matching spreadsheet found.');
+
+        const range = args.range || 'A1:Z100';
+        const result = await googleJson(
+          `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`
+        );
+
+        return { toolName, executedAt, status: 'completed', spreadsheetId, range, values: result.values || [] };
+      }
+
+      case 'sheets_update': {
+        const result = await googleJson(
+          `https://sheets.googleapis.com/v4/spreadsheets/${args.spreadsheetId}/values/${encodeURIComponent(args.range)}?valueInputOption=USER_ENTERED`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              values: Array.isArray(args.values) ? args.values : args.values?.values || [],
+            }),
+          }
+        );
+
+        return { toolName, executedAt, status: 'completed', result };
+      }
+
+      case 'slides_create': {
+        const presentation = await googleJson('https://slides.googleapis.com/v1/presentations', {
+          method: 'POST',
+          body: JSON.stringify({ title: args.title }),
+        });
+
+        if (args.outline) {
+          await googleJson(`https://slides.googleapis.com/v1/presentations/${presentation.presentationId}:batchUpdate`, {
+            method: 'POST',
+            body: JSON.stringify({
+              requests: [
+                {
+                  createSlide: {
+                    objectId: `slide_${Date.now()}`,
+                    slideLayoutReference: { predefinedLayout: 'TITLE_AND_BODY' },
+                  },
+                },
+              ],
+            }),
+          });
+        }
+
+        return { toolName, executedAt, status: 'completed', presentation };
+      }
+
+      case 'tasks_list': {
+        const listId = args.listId || '@default';
+        const result = await googleJson(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(listId)}/tasks`);
+        return { toolName, executedAt, status: 'completed', tasks: result.items || [] };
+      }
+
+      case 'tasks_create': {
+        const result = await googleJson('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: args.title,
+            notes: args.notes || '',
+            due: args.due || undefined,
+          }),
+        });
+
+        return { toolName, executedAt, status: 'completed', task: result };
+      }
+
+      case 'contacts_search': {
+        const result = await googleJson(
+          `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(args.query)}&readMask=names,emailAddresses,phoneNumbers,organizations`
+        );
+
+        return { toolName, executedAt, status: 'completed', contacts: result.results || [] };
+      }
+
+      case 'meet_schedule': {
+        const endTime = args.endTime || new Date(new Date(args.startTime).getTime() + 30 * 60000).toISOString();
+
+        const attendees = String(args.attendees || '')
+          .split(',')
+          .map((email: string) => email.trim())
+          .filter(Boolean)
+          .map((email: string) => ({ email }));
+
+        const result = await googleJson(
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              summary: args.title,
+              start: { dateTime: args.startTime },
+              end: { dateTime: endTime },
+              attendees,
+              conferenceData: {
+                createRequest: {
+                  requestId: `meet-${Date.now()}`,
+                  conferenceSolutionKey: { type: 'hangoutsMeet' },
+                },
+              },
+            }),
+          }
+        );
+
+        return { toolName, executedAt, status: 'completed', event: result, meetingLink: result.hangoutLink };
+      }
+
+      case 'youtube_search': {
+        const limit = Math.min(Number(args.limit || 5), 20);
+        const result = await googleJson(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${limit}&q=${encodeURIComponent(args.query)}`
+        );
+
+        return { toolName, executedAt, status: 'completed', videos: result.items || [] };
+      }
+
+      case 'forms_create': {
+        const result = await googleJson('https://forms.googleapis.com/v1/forms', {
+          method: 'POST',
+          body: JSON.stringify({
+            info: {
+              title: args.title,
+            },
+          }),
+        });
+
+        return { toolName, executedAt, status: 'completed', form: result };
+      }
+
+      case 'analytics_report': {
+        const metrics = String(args.metrics || 'activeUsers,sessions')
+          .split(',')
+          .map((name: string) => ({ name: name.trim() }))
+          .filter((m: any) => m.name);
+
+        const dimensions = String(args.dimensions || 'date')
+          .split(',')
+          .map((name: string) => ({ name: name.trim() }))
+          .filter((d: any) => d.name);
+
+        const result = await googleJson(
+          `https://analyticsdata.googleapis.com/v1beta/properties/${args.propertyId}:runReport`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+              metrics,
+              dimensions,
+            }),
+          }
+        );
+
+        return { toolName, executedAt, status: 'completed', report: result };
+      }
+
+      case 'workspace_search': {
+        const sources = String(args.sources || 'mail,drive,calendar')
+          .split(',')
+          .map((s: string) => s.trim().toLowerCase());
+
+        const output: any = { mail: null, drive: null, calendar: null };
+
+        if (sources.includes('mail') || sources.includes('gmail')) {
+          try {
+            output.mail = await executeGoogleTool('gmail_read', { query: args.query, limit: 5 });
+          } catch (e: any) {
+            output.mail = { error: e.message };
+          }
+        }
+
+        if (sources.includes('drive') || sources.includes('files')) {
+          try {
+            output.drive = await executeGoogleTool('drive_search', { query: args.query, limit: 5 });
+          } catch (e: any) {
+            output.drive = { error: e.message };
+          }
+        }
+
+        if (sources.includes('calendar')) {
+          try {
+            output.calendar = await executeGoogleTool('calendar_check_schedule', { date: new Date().toISOString() });
+          } catch (e: any) {
+            output.calendar = { error: e.message };
+          }
+        }
+
+        return { toolName, executedAt, status: 'completed', results: output };
+      }
+
+      case 'create_contract_document': {
+        const contractText = buildContractText(args);
+        const title = args.title || `${args.contractType || 'Contract'} - ${args.partyA || 'Party A'} and ${args.partyB || 'Party B'}`;
+        const doc = await createGoogleDoc(title, contractText);
+        const pdfBlob = await exportDriveFile(doc.documentId, 'application/pdf');
+        const pdfDownloadData = await makeBlobDownloadData(pdfBlob);
+        const pdfBuffer = await pdfBlob.arrayBuffer();
+
+        let emailResult = null;
+        const emailTo = args.emailTo === 'current_user' ? getCurrentUserEmail() : args.emailTo;
+
+        if (emailTo) {
+          emailResult = await sendGmail({
+            to: emailTo,
+            subject: title,
+            body: 'Attached is the contract PDF.',
+            attachment: {
+              filename: `${title}.pdf`,
+              mimeType: 'application/pdf',
+              base64Content: arrayBufferToBase64Url(pdfBuffer).replace(/-/g, '+').replace(/_/g, '/'),
+            },
+          });
+        }
+
+        return {
+          toolName,
+          executedAt,
+          status: 'completed',
+          title,
+          documentId: doc.documentId,
+          driveLink: doc.driveFile?.webViewLink,
+          emailSentTo: emailTo || null,
+          emailResult,
+          textPreview: contractText.slice(0, 12000),
+          downloadData: pdfDownloadData,
+          downloadFilename: `${title}.pdf`,
+        };
+      }
+
+      default:
+        throw new Error(`Tool "${toolName}" is not implemented yet.`);
+    }
   };
 
   const startSession = async () => {
@@ -1288,7 +2070,6 @@ function MaximusAgent({
     setConnecting(true);
     modelTranscriptBufferRef.current = '';
     userTranscriptBufferRef.current = '';
-    setAgentLevel(0);
 
     try {
       if (audioStreamerRef.current) {
@@ -1302,6 +2083,7 @@ function MaximusAgent({
         `Agent personality overlay: ${settings.personality}.`,
         BIBLE_PERSONALITY || '',
         `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
+        `When asked to create contracts, documents, agreements, letters, PDFs, or files, use the create_contract_document, docs_create, drive_upload_file, gmail_send, or gmail_draft tools when appropriate. Never pretend a file was saved, emailed, or exported unless the tool result confirms it.`,
         historyContext,
       ].filter(Boolean).join('\n\n');
 
@@ -1339,7 +2121,7 @@ function MaximusAgent({
                   const toolName = c.name || 'unknown_tool';
                   const args = c.args as any;
                   const tid = Math.random().toString(36).substring(7);
-                  const action = JSON.stringify(args || {}, null, 0);
+                  const action = safeJsonStringify(args || {});
 
                   setTasks(p => [...p, {
                     id: tid,
@@ -1350,18 +2132,24 @@ function MaximusAgent({
 
                   try {
                     const result = await executeGoogleTool(toolName, args);
-                    const download = makeDownloadFile(result, toolName);
+
+                    let download = result.downloadData && result.downloadFilename
+                      ? {
+                          downloadData: result.downloadData,
+                          downloadFilename: result.downloadFilename,
+                        }
+                      : makeDownloadFile(result, toolName);
 
                     setTasks(p => p.map(t => t.id === tid ? {
                       ...t,
-                      status: result.status === 'missing_access_token' ? 'failed' : 'completed',
-                      result: result.note,
+                      status: 'completed',
+                      result: `Completed: ${toolName}`,
                       ...download,
                     } : t));
 
                     saveMessage(
                       'model',
-                      `Tool result from ${toolName}: ${result.note}`,
+                      `Tool result from ${toolName}: completed.`,
                       {
                         toolName,
                         toolResult: result,
@@ -1426,7 +2214,6 @@ function MaximusAgent({
               if (serverContent.interrupted) {
                 audioStreamerRef.current?.stop();
                 setIsAgentSpeaking(false);
-                setAgentLevel(0);
                 modelTranscriptBufferRef.current = '';
                 return;
               }
@@ -1449,22 +2236,8 @@ function MaximusAgent({
                 for (const part of parts) {
                   if (part.inlineData?.data) {
                     audioStreamerRef.current?.addPCM16(part.inlineData.data);
-
                     setIsAgentSpeaking(true);
-                    setAgentLevel(prev => Math.min(1, prev + 0.38));
-
-                    if (agentLevelTimeoutRef.current) {
-                      clearTimeout(agentLevelTimeoutRef.current);
-                    }
-
-                    agentLevelTimeoutRef.current = setTimeout(() => {
-                      setIsAgentSpeaking(false);
-                      setAgentLevel(0);
-                    }, 520);
-
-                    setTimeout(() => {
-                      setAgentLevel(prev => Math.max(0, prev * 0.58));
-                    }, 120);
+                    setTimeout(() => setIsAgentSpeaking(false), 620);
                   }
 
                   if (part.text?.trim()) {
@@ -1535,11 +2308,6 @@ function MaximusAgent({
         }
       } catch (e) {}
 
-      setIsActive(true);
-      isActiveRef.current = true;
-
-      await startMicVisualizer();
-
       audioRecorderRef.current = new AudioRecorder((base64) => {
         if (isMutedRef.current) return;
         sendAudioToLive(base64);
@@ -1547,10 +2315,13 @@ function MaximusAgent({
 
       await audioRecorderRef.current.start();
 
+      setIsActive(true);
+      isActiveRef.current = true;
       setConnecting(false);
+      startMicVisualizer();
 
       setTimeout(() => {
-        sendTextToLive(`${settings.userName} is here. Start like you are already present in front of them. Say something like: Yes, I'm here. I'm listening.`);
+        sendTextToLive(`${settings.userName} is here. Start like you are already present in front of them. Say something like: Yes, I'm here. I'm listening. Do not ask how you can help.`);
       }, 500);
     } catch (err) {
       console.error('Session start failed:', err);
@@ -1575,7 +2346,7 @@ function MaximusAgent({
 
         setTimeout(() => {
           sendTextToLive(
-            `${settings.userName} just opened the camera. Notice it in a normal human way, like you looked up and saw the view. Do not say you can assist. Say something like: Oh, yeah, I see it now. Then briefly describe what you can see.`
+            `${settings.userName} just opened the camera. Notice it in a normal human way, like you looked up and saw the view. Do not say you can assist. Say something like: Oh, yeah, I see it now. Then briefly describe only what is actually visible. If the visual input is unclear, say that.`
           );
         }, 300);
 
@@ -1693,13 +2464,6 @@ function MaximusAgent({
     try { sessionRef.current?.close(); } catch (e) {}
 
     stopMicVisualizer();
-
-    if (agentLevelTimeoutRef.current) {
-      clearTimeout(agentLevelTimeoutRef.current);
-      agentLevelTimeoutRef.current = null;
-    }
-
-    setAgentLevel(0);
 
     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
 
@@ -1859,7 +2623,7 @@ function MaximusAgent({
             <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-lime-300/[0.04] to-transparent" />
           </div>
 
-          <LimeVoiceOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} agentLevel={agentLevel} />
+          <LimeVoiceOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} />
 
           <AnimatePresence>
             {currentTranscript && (
@@ -2063,16 +2827,14 @@ function MaximusAgent({
             className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#050505]"
           >
             <div className="sticky top-0 z-10 mx-auto flex w-full max-w-2xl items-center justify-between border-b border-white/10 bg-[#050505]/80 p-6 backdrop-blur-xl">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-white">
-                Profile
-              </h2>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-white">Profile</h2>
 
               <button onClick={() => setShowProfile(false)} className="rounded-xl bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-6 pb-28">
+            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-6 pb-32">
               <div className="flex flex-col items-center gap-4">
                 <div className="group relative flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border-2 border-white/10 bg-zinc-900">
                   {settings.avatarUrl || user.photoURL ? (
@@ -2164,9 +2926,6 @@ function MaximusAgent({
                       </option>
                     ))}
                   </select>
-                  <p className="text-[10px] leading-relaxed text-zinc-600">
-                    Display names are hero aliases. The saved voice id is used internally for Live API audio.
-                  </p>
                 </div>
 
                 <div className="flex flex-1 flex-col space-y-2">
@@ -2184,22 +2943,16 @@ function MaximusAgent({
               </div>
             </div>
 
-            <div className="sticky bottom-0 z-10 mx-auto w-full max-w-2xl border-t border-white/10 bg-[#050505]/90 p-6 backdrop-blur-xl">
-              <div className="flex gap-3">
-                <button
-                  onClick={onLogout}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-4 text-xs font-bold uppercase tracking-widest text-red-400 transition-all hover:bg-red-500/20 active:scale-[0.98]"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
+            <div className="fixed bottom-0 left-0 right-0 z-[220] border-t border-white/10 bg-[#050505]/90 p-4 backdrop-blur-xl">
+              <div className="mx-auto flex w-full max-w-2xl gap-3">
+                <button onClick={onLogout} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-xs font-bold uppercase tracking-widest text-red-500 transition-all hover:bg-red-500/20 active:scale-95">
+                  <LogOut className="h-4 w-4" /> Logout
                 </button>
-
                 <button
                   onClick={persistSettings}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-lime-300 px-4 py-4 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-lime-200 active:scale-[0.98]"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-lime-300 px-4 py-3 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-lime-200 active:scale-95"
                 >
-                  <Save className="h-4 w-4" />
-                  Save
+                  <Save className="h-4 w-4" /> Save
                 </button>
               </div>
             </div>
