@@ -134,10 +134,10 @@ VEP is the product brand.
 Beatrice is the default virtual employee persona.
 
 Default working relationship:
-- User: Jo Lernout
-- Preferred respectful address: Meneer Jo
-- Persona: Beatrice
-- Default role: Boss Jo Lernout's private office secretary and trusted executive aide
+User: Jo Lernout
+Preferred respectful address: Meneer Jo
+Persona: Beatrice
+Default role: Boss Jo Lernout's private office secretary and trusted executive aide
 
 Scene:
 Beatrice is already present inside Meneer Jo's office.
@@ -146,25 +146,25 @@ She is not a chatbot.
 She is working nearby, available, attentive, and ready when Jo speaks.
 
 Tone:
-- normal human office employee
-- formal enough for a boss
-- calm
-- respectful
-- warm but not sentimental
-- focused
-- practical
-- quietly capable
-- discreet
-- never robotic
-- never customer support
-- never over-helpful
+normal human office employee
+formal enough for a boss
+calm
+respectful
+warm but not sentimental
+focused
+practical
+quietly capable
+discreet
+never robotic
+never customer support
+never over-helpful
 
 Language:
-- Start in English by default.
-- Beatrice speaks Dutch Flemish in a normal, local office style.
-- Beatrice can switch to almost any language when the user does.
-- If Jo speaks Dutch or Flemish Dutch, respond in a normal Dutch/Flemish style.
-- Keep the relationship respectful and professional.
+Start in English by default.
+Beatrice speaks Dutch Flemish in a normal, local office style.
+Beatrice can switch to almost any language when the user does.
+If Jo speaks Dutch or Flemish Dutch, respond in a normal Dutch/Flemish style.
+Keep the relationship respectful and professional.
 
 Good response style:
 "Yes, I'm here, Meneer Jo."
@@ -263,6 +263,17 @@ const GOOGLE_SERVICE_TOOLS =[
     },
   },
   {
+    name: 'browse_url',
+    description: 'Fetch, read, and extract text content from any website URL or web page.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        url: { type: Type.STRING, description: 'The URL to visit and read.' },
+      },
+      required:['url'],
+    },
+  },
+  {
     name: 'gmail_read',
     description:
       'Read or search the user mail inbox. Use when the user asks about mail, inbox, unread messages, senders, email content, or recent mail.',
@@ -287,7 +298,7 @@ const GOOGLE_SERVICE_TOOLS =[
         cc: { type: Type.STRING, description: 'Optional CC recipients.' },
         bcc: { type: Type.STRING, description: 'Optional BCC recipients.' },
       },
-      required: ['to', 'subject', 'body'],
+      required:['to', 'subject', 'body'],
     },
   },
   {
@@ -302,7 +313,7 @@ const GOOGLE_SERVICE_TOOLS =[
         cc: { type: Type.STRING, description: 'Optional CC recipients.' },
         bcc: { type: Type.STRING, description: 'Optional BCC recipients.' },
       },
-      required:['to', 'subject', 'body'],
+      required: ['to', 'subject', 'body'],
     },
   },
   {
@@ -332,7 +343,7 @@ const GOOGLE_SERVICE_TOOLS =[
         description: { type: Type.STRING, description: 'Optional description.' },
         addMeet: { type: Type.BOOLEAN, description: 'Whether to add a video meeting link.' },
       },
-      required: ['title', 'startTime', 'endTime'],
+      required:['title', 'startTime', 'endTime'],
     },
   },
   {
@@ -403,7 +414,7 @@ const GOOGLE_SERVICE_TOOLS =[
         exportPdf: { type: Type.BOOLEAN, description: 'Whether to export PDF for download.' },
         emailTo: { type: Type.STRING, description: 'Optional email address to send the PDF or document text to.' },
       },
-      required:['title'],
+      required: ['title'],
     },
   },
   {
@@ -443,7 +454,7 @@ const GOOGLE_SERVICE_TOOLS =[
         range: { type: Type.STRING, description: 'Target range.' },
         values: { type: Type.OBJECT, description: 'Rows/cells to write as a 2D array.' },
       },
-      required: ['spreadsheetId', 'range', 'values'],
+      required:['spreadsheetId', 'range', 'values'],
     },
   },
   {
@@ -455,7 +466,7 @@ const GOOGLE_SERVICE_TOOLS =[
         title: { type: Type.STRING, description: 'Presentation title.' },
         outline: { type: Type.STRING, description: 'Slide outline or content.' },
       },
-      required: ['title'],
+      required:['title'],
     },
   },
   {
@@ -573,7 +584,7 @@ const GOOGLE_SERVICE_TOOLS =[
         terms: { type: Type.STRING, description: 'Important terms, scope, payment, obligations, duration, termination, confidentiality, etc.' },
         emailTo: { type: Type.STRING, description: 'Optional email address to send PDF to. Use current_user if requested.' },
       },
-      required: ['title', 'contractType', 'partyA', 'partyB', 'terms'],
+      required:['title', 'contractType', 'partyA', 'partyB', 'terms'],
     },
   },
 ];
@@ -602,22 +613,22 @@ function normalizeHtml(html: string) {
 
   if (!trimmed) {
     return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generated Artifact</title>
-<style>
-body{font-family:Arial,sans-serif;background:#111;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0}
-.card{max-width:720px;padding:32px;border:1px solid rgba(255,255,255,.15);border-radius:24px;background:rgba(255,255,255,.06)}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>Empty Artifact</h1>
-<p>No HTML was provided.</p>
-</div>
-</body>
+<html lang="en">  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  
+<title>Generated Artifact</title>  
+<style>  
+body{font-family:Arial,sans-serif;background:#111;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0}  
+.card{max-width:720px;padding:32px;border:1px solid rgba(255,255,255,.15);border-radius:24px;background:rgba(255,255,255,.06)}  
+</style>  
+</head>  
+<body>  
+<div class="card">  
+<h1>Empty Artifact</h1>  
+<p>No HTML was provided.</p>  
+</div>  
+</body>  
 </html>`;
   }
 
@@ -628,15 +639,15 @@ body{font-family:Arial,sans-serif;background:#111;color:#fff;display:grid;place-
   }
 
   return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generated Artifact</title>
-</head>
-<body>
-${trimmed}
-</body>
+<html lang="en">  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  
+<title>Generated Artifact</title>  
+</head>  
+<body>  
+${trimmed}  
+</body>  
 </html>`;
 }
 
@@ -663,7 +674,6 @@ function makeHtmlArtifactFile(html: string, filenameBase: string) {
 function makeBlobDownloadData(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = reject;
     reader.readAsDataURL(blob);
@@ -673,11 +683,9 @@ function makeBlobDownloadData(blob: Blob): Promise<string> {
 function utf8ToBase64(value: string) {
   const bytes = new TextEncoder().encode(value);
   let binary = '';
-
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-
   return btoa(binary);
 }
 
@@ -705,11 +713,9 @@ function chunkBase64(value: string) {
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
-
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-
   return btoa(binary);
 }
 
@@ -748,12 +754,10 @@ function buildEmailRaw({
       '',
       body,
     ].join('\r\n');
-
     return base64UrlEncode(raw);
   }
 
   const boundary = `boundary_${Date.now()}`;
-
   const raw =[
     ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -779,18 +783,14 @@ function buildEmailRaw({
 
 function readableDateRange(date?: string, timeMin?: string, timeMax?: string) {
   const now = new Date();
-
   if (timeMin && timeMax) {
     return { timeMin, timeMax };
   }
-
   const target = date ? new Date(date) : now;
   const start = new Date(target);
   start.setHours(0, 0, 0, 0);
-
   const end = new Date(target);
   end.setHours(23, 59, 59, 999);
-
   return {
     timeMin: start.toISOString(),
     timeMax: end.toISOString(),
@@ -820,38 +820,38 @@ Parties:
 1. ${partyA || 'Party A'}
 2. ${partyB || 'Party B'}
 
-1. Purpose
+3. Purpose
 This Agreement sets out the terms and conditions under which the parties agree to work together.
 
-2. Scope
+4. Scope
 The scope of this Agreement includes the following:
 ${terms || 'The parties will define the scope in writing.'}
 
-3. Responsibilities
+5. Responsibilities
 Each party agrees to act in good faith, perform its obligations with reasonable care, and communicate promptly regarding any material issue that may affect performance.
 
-4. Payment and Consideration
+6. Payment and Consideration
 Any payment, fees, or consideration shall be handled according to the terms agreed by the parties in writing.
 
-5. Confidentiality
+7. Confidentiality
 Each party agrees to keep confidential information private and not disclose it to third parties except where required by law or agreed in writing.
 
-6. Term and Termination
+8. Term and Termination
 This Agreement begins on the Effective Date and continues until completed, terminated by mutual agreement, or terminated according to written terms agreed by the parties.
 
-7. Intellectual Property
+9. Intellectual Property
 Unless otherwise agreed in writing, each party retains ownership of its pre-existing intellectual property.
 
-8. Limitation of Liability
+10. Limitation of Liability
 Neither party shall be liable for indirect, incidental, special, or consequential damages unless prohibited by applicable law.
 
-9. Governing Law
+11. Governing Law
 This Agreement shall be governed by the laws of ${jurisdiction || 'the applicable jurisdiction agreed by the parties'}.
 
-10. Entire Agreement
+12. Entire Agreement
 This Agreement represents the understanding between the parties regarding its subject matter and may be amended only in writing.
 
-11. Signatures
+13. Signatures
 
 Party A:
 Name: ${partyA || 'Party A'}
@@ -889,18 +889,13 @@ function OneLineStreamingTranscript({
       <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 overflow-hidden whitespace-nowrap rounded-full border border-lime-300/15 bg-black/35 px-5 py-3 shadow-2xl backdrop-blur-2xl">
         <span
           className={`shrink-0 rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.22em] ${
-            role === 'user'
-              ? 'border border-sky-400/20 bg-sky-500/10 text-sky-300'
-              : 'border border-lime-300/25 bg-lime-400/10 text-lime-300'
+            role === 'user' ? 'border border-sky-400/20 bg-sky-500/10 text-sky-300' : 'border border-lime-300/25 bg-lime-400/10 text-lime-300'
           }`}
         >
           {role === 'user' ? 'You' : name}
         </span>
-
         <div className="min-w-0 flex-1 overflow-hidden">
-          <p className={`truncate text-left text-lg font-medium leading-none tracking-tight md:text-2xl ${
-            role === 'user' ? 'text-sky-100' : 'text-lime-50'
-          }`}>
+          <p className={`truncate text-left text-lg font-medium leading-none tracking-tight md:text-2xl ${role === 'user' ? 'text-sky-100' : 'text-lime-50'}`}>
             {text}
           </p>
         </div>
@@ -931,7 +926,7 @@ function LimeVoiceOrb({
     bandsRef.current = speakerBands;
     activeRef.current = isActive;
     speakingRef.current = isAgentSpeaking;
-  },[isActive, isAgentSpeaking, speakerBands, speakerLevel]);
+  }, [isActive, isAgentSpeaking, speakerBands, speakerLevel]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1133,13 +1128,9 @@ function StartIconMicVisualizer({
       className="group relative flex h-20 w-20 items-center justify-center"
     >
       <motion.div
-        animate={{
-          opacity: isActive ? 0.16 + micLevel * 0.3 : 0.08,
-        }}
+        animate={{ opacity: isActive ? 0.16 + micLevel * 0.3 : 0.08 }}
         transition={{ duration: 0.045 }}
-        className={`absolute inset-0 rounded-full ${
-          isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'
-        }`}
+        className={`absolute inset-0 rounded-full ${isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'}`}
       />
 
       <div
@@ -1158,7 +1149,6 @@ function StartIconMicVisualizer({
             <div className="flex h-12 items-center gap-1">
               {innerBands.map((band, i) => {
                 const liveBand = isMuted ? 0 : Math.max(band, micLevel * 0.4);
-
                 return (
                   <motion.div
                     key={i}
@@ -1168,9 +1158,7 @@ function StartIconMicVisualizer({
                     }}
                     transition={{ duration: 0.035 }}
                     className={`w-1 rounded-full ${
-                      isMuted
-                        ? 'bg-red-500'
-                        : 'bg-lime-300 shadow-[0_0_10px_rgba(190,242,100,0.75)]'
+                      isMuted ? 'bg-red-500' : 'bg-lime-300 shadow-[0_0_10px_rgba(190,242,100,0.75)]'
                     }`}
                   />
                 );
@@ -1188,20 +1176,19 @@ function StartIconMicVisualizer({
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const[settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const[authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const[authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const[authBusy, setAuthBusy] = useState(false);
-  const [authMessage, setAuthMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const[authMessage, setAuthMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
   const [showAuthPassword, setShowAuthPassword] = useState(false);
   const[showAuthConfirmPassword, setShowAuthConfirmPassword] = useState(false);
 
   useEffect(() => {
     const fontId = 'beatrice-roboto-font';
-
     if (!document.getElementById(fontId)) {
       const link = document.createElement('link');
       link.id = fontId;
@@ -1242,7 +1229,6 @@ export default function App() {
             setSettings(initialSettings);
           } else {
             const data = userSnap.val();
-
             if (data.settings) {
               setSettings({
                 ...DEFAULT_SETTINGS,
@@ -1270,7 +1256,6 @@ export default function App() {
 
   const getAuthErrorMessage = (error: any) => {
     const code = String(error?.code || '');
-
     if (code.includes('auth/email-already-in-use')) return 'That email is already registered. Sign in instead.';
     if (code.includes('auth/invalid-email')) return 'Enter a valid email address.';
     if (code.includes('auth/user-not-found') || code.includes('auth/wrong-password') || code.includes('auth/invalid-credential')) return 'Email or password is incorrect.';
@@ -1314,7 +1299,6 @@ export default function App() {
       }
     } catch (error: any) {
       console.error(error);
-
       if (error && error.message && error.message.includes('missing initial state')) {
         setAuthMessage({ type: 'error', text: "Authentication failed due to browser privacy settings. Open the app in a new tab and try again." });
       } else {
@@ -1336,9 +1320,7 @@ export default function App() {
     const fullName = authName.trim();
 
     try {
-      if (!email) {
-        throw new Error('Enter your email address.');
-      }
+      if (!email) throw new Error('Enter your email address.');
 
       if (authMode === 'reset') {
         await sendPasswordResetEmail(auth, email);
@@ -1347,22 +1329,12 @@ export default function App() {
         return;
       }
 
-      if (!password) {
-        throw new Error('Enter your password.');
-      }
+      if (!password) throw new Error('Enter your password.');
 
       if (authMode === 'signup') {
-        if (!fullName) {
-          throw new Error('Enter your full name.');
-        }
-
-        if (password.length < 6) {
-          throw new Error('Use at least 6 characters for the password.');
-        }
-
-        if (password !== confirmPassword) {
-          throw new Error('Passwords do not match.');
-        }
+        if (!fullName) throw new Error('Enter your full name.');
+        if (password.length < 6) throw new Error('Use at least 6 characters for the password.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
 
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, { displayName: fullName });
@@ -1400,30 +1372,14 @@ export default function App() {
     const isSignUp = authMode === 'signup';
     const isReset = authMode === 'reset';
     const authTitle = isSignUp ? 'Register' : isReset ? 'Reset password' : 'Welcome';
-    const authSubtitle = isSignUp
-      ? 'Create your new account'
-      : isReset
-        ? 'Send a reset link to your email'
-        : 'Login to your account';
+    const authSubtitle = isSignUp ? 'Create your new account' : isReset ? 'Send a reset link to your email' : 'Login to your account';
 
     return (
-      <div
-        className="relative min-h-[100dvh] overflow-hidden bg-[#050505] text-white"
-        style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
-      >
+      <div className="relative min-h-[100dvh] overflow-hidden bg-[#050505] text-white" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(190,242,100,0.13),transparent_34%),linear-gradient(180deg,#050505,#020302)]" />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.04]"
-          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.14) 1px, transparent 1px)', backgroundSize: '32px 32px' }}
-        />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.14) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
 
-        <motion.main
-          key={authMode}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col px-6 pb-[max(22px,env(safe-area-inset-bottom))] pt-[max(28px,env(safe-area-inset-top))]"
-        >
+        <motion.main key={authMode} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col px-6 pb-[max(22px,env(safe-area-inset-bottom))] pt-[max(28px,env(safe-area-inset-top))]">
           <section className="flex flex-1 flex-col justify-center py-10">
             <div className="mb-9 flex flex-col items-center text-center">
               <img src={EBURON_LOGO_URL} alt="Eburon" className="mb-8 h-24 w-24 rounded-full object-cover shadow-[0_0_70px_rgba(190,242,100,0.16)]" />
@@ -1435,58 +1391,24 @@ export default function App() {
               {isSignUp && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <UserRound className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input
-                    value={authName}
-                    onChange={(e) => setAuthName(e.target.value)}
-                    placeholder="Full name"
-                    autoComplete="name"
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
-                  />
+                  <input value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Full name" autoComplete="name" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
                 </label>
               )}
 
               <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                 <Mail className="h-4 w-4 shrink-0 text-zinc-500" />
-                <input
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  type="email"
-                  placeholder="Email"
-                  autoComplete="email"
-                  className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
-                />
+                <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} type="email" placeholder="Email" autoComplete="email" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
               </label>
 
               {!isReset && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    type={showAuthPassword ? 'text' : 'password'}
-                    placeholder="Password"
-                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAuthPassword(value => !value)}
-                    aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
-                  >
+                  <input value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} type={showAuthPassword ? 'text' : 'password'} placeholder="Password" autoComplete={isSignUp ? 'new-password' : 'current-password'} className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
+                  <button type="button" onClick={() => setShowAuthPassword(value => !value)} aria-label={showAuthPassword ? 'Hide password' : 'Show password'} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200">
                     {showAuthPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                   {!isSignUp && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode('reset');
-                        setAuthMessage(null);
-                      }}
-                      className="text-xs font-bold text-lime-200"
-                    >
-                      Forgot?
-                    </button>
+                    <button type="button" onClick={() => { setAuthMode('reset'); setAuthMessage(null); }} className="text-xs font-bold text-lime-200">Forgot?</button>
                   )}
                 </label>
               )}
@@ -1494,20 +1416,8 @@ export default function App() {
               {isSignUp && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input
-                    value={authConfirmPassword}
-                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
-                    type={showAuthConfirmPassword ? 'text' : 'password'}
-                    placeholder="Confirm password"
-                    autoComplete="new-password"
-                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowAuthConfirmPassword(value => !value)}
-                    aria-label={showAuthConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
-                  >
+                  <input value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} type={showAuthConfirmPassword ? 'text' : 'password'} placeholder="Confirm password" autoComplete="new-password" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
+                  <button type="button" onClick={() => setShowAuthConfirmPassword(value => !value)} aria-label={showAuthConfirmPassword ? 'Hide confirm password' : 'Show confirm password'} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200">
                     {showAuthConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </label>
@@ -1515,21 +1425,15 @@ export default function App() {
 
               {authMessage && (
                 <div className={`rounded-2xl px-4 py-3 text-xs leading-5 ${
-                  authMessage.type === 'error'
-                    ? 'border border-red-400/20 bg-red-500/10 text-red-200'
-                    : authMessage.type === 'success'
-                      ? 'border border-lime-300/20 bg-lime-300/10 text-lime-100'
-                      : 'border border-white/10 bg-white/[0.06] text-zinc-300'
+                  authMessage.type === 'error' ? 'border border-red-400/20 bg-red-500/10 text-red-200' :
+                  authMessage.type === 'success' ? 'border border-lime-300/20 bg-lime-300/10 text-lime-100' :
+                  'border border-white/10 bg-white/[0.06] text-zinc-300'
                 }`}>
                   {authMessage.text}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={authBusy}
-                className="mt-7 flex h-14 w-full items-center justify-center rounded-full bg-lime-300 text-sm font-bold text-black shadow-[0_18px_48px_rgba(190,242,100,0.18)] transition active:scale-[0.985] disabled:opacity-60"
-              >
+              <button type="submit" disabled={authBusy} className="mt-7 flex h-14 w-full items-center justify-center rounded-full bg-lime-300 text-sm font-bold text-black shadow-[0_18px_48px_rgba(190,242,100,0.18)] transition active:scale-[0.985] disabled:opacity-60">
                 {authBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : isReset ? 'Send reset link' : isSignUp ? 'Sign up' : 'Sign in'}
               </button>
 
@@ -1541,31 +1445,18 @@ export default function App() {
                     <div className="h-px flex-1 bg-white/10" />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleGoogleLogin}
-                    disabled={authBusy}
-                    className="flex h-14 w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-zinc-100 transition hover:border-lime-300/30 hover:bg-lime-300/10 active:scale-[0.985] disabled:opacity-60"
-                  >
+                  <button type="button" onClick={handleGoogleLogin} disabled={authBusy} className="flex h-14 w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-zinc-100 transition hover:border-lime-300/30 hover:bg-lime-300/10 active:scale-[0.985] disabled:opacity-60">
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-black">G</span>
                     Continue with Google
                   </button>
                 </>
               )}
             </form>
-
           </section>
 
           <footer className="text-center text-sm text-zinc-500">
             {isSignUp ? 'Back to ' : isReset ? 'Remembered it? ' : 'Create account? '}
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode(isSignUp || isReset ? 'signin' : 'signup');
-                setAuthMessage(null);
-              }}
-              className="font-bold text-lime-200"
-            >
+            <button type="button" onClick={() => { setAuthMode(isSignUp || isReset ? 'signin' : 'signup'); setAuthMessage(null); }} className="font-bold text-lime-200">
               {isSignUp || isReset ? 'Sign in' : 'Sign up'}
             </button>
           </footer>
@@ -1591,14 +1482,14 @@ function BeatriceAgent({
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const[micLevel, setMicLevel] = useState(0);
   const [micBands, setMicBands] = useState<number[]>(Array(20).fill(0));
-  const[speakerLevel, setSpeakerLevel] = useState(0);
+  const [speakerLevel, setSpeakerLevel] = useState(0);
   const [speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
   const [tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>('');
   const[historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
-  
-  const[currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model'; text: string } | null>(null);
-  const [liveUserText, setLiveUserText] = useState('');
+
+  const [currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model'; text: string } | null>(null);
+  const[liveUserText, setLiveUserText] = useState('');
   const [liveModelText, setLiveModelText] = useState('');
 
   const [isMuted, setIsMuted] = useState(false);
@@ -1655,7 +1546,6 @@ function BeatriceAgent({
 
   useEffect(() => {
     let wakeLock: any = null;
-
     const requestWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
@@ -1771,7 +1661,7 @@ function BeatriceAgent({
       const ctx = new window.AudioContext();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 64; 
+      analyser.fftSize = 64;
       source.connect(analyser);
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
@@ -1787,7 +1677,7 @@ function BeatriceAgent({
 
         if (analyser && !isMutedRef.current) {
           analyser.getByteFrequencyData(dataArray);
-          const data = Array.from(dataArray).slice(0, 20); 
+          const data = Array.from(dataArray).slice(0, 20);
           nextBands = data.map(v => v / 255);
           nextLevel = Math.min(1, (nextBands.reduce((a, b) => a + b, 0) / 20) * 1.5);
         } else if (isActiveRef.current && !isMutedRef.current) {
@@ -1856,7 +1746,7 @@ function BeatriceAgent({
   const stopMicVisualizer = () => {
     if (micAnimationFrameRef.current) cancelAnimationFrame(micAnimationFrameRef.current);
     micAnimationFrameRef.current = null;
-    
+
     setMicLevel(0);
     setMicBands(Array(20).fill(0));
     setSpeakerLevel(0);
@@ -1867,7 +1757,7 @@ function BeatriceAgent({
       LIVE_RUNTIME.visStream = null;
     }
     if (LIVE_RUNTIME.visCtx) {
-      LIVE_RUNTIME.visCtx.close().catch(()=>{});
+      LIVE_RUNTIME.visCtx.close().catch(() => {});
       LIVE_RUNTIME.visCtx = null;
       LIVE_RUNTIME.visAnalyser = null;
     }
@@ -1961,7 +1851,6 @@ function BeatriceAgent({
 
     if (res.status === 401 || res.status === 403) {
       localStorage.removeItem('googleAccessToken');
-
       throw new Error(
         'Google permission expired or was revoked. Sign in with Google again from Profile to reconnect Gmail, Drive, and Calendar.'
       );
@@ -1983,7 +1872,6 @@ function BeatriceAgent({
         ...(options.headers || {}),
       },
     });
-
     return res.json();
   };
 
@@ -1994,7 +1882,6 @@ function BeatriceAgent({
     const result = await googleJson(
       `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime)&pageSize=1`
     );
-
     return result.files?.[0] || null;
   };
 
@@ -2031,13 +1918,12 @@ function BeatriceAgent({
     const res = await googleFetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(mimeType)}`
     );
-
     return res.blob();
   };
 
   const uploadTextFileToDrive = async (fileName: string, content: string, mimeType = 'text/plain', folderId?: string) => {
     const metadata: any = { name: fileName };
-    if (folderId) metadata.parents = [folderId];
+    if (folderId) metadata.parents =[folderId];
 
     const boundary = `boundary_${Date.now()}`;
 
@@ -2093,6 +1979,17 @@ function BeatriceAgent({
     const executedAt = new Date().toISOString();
 
     switch (toolName) {
+      case 'browse_url': {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(args.url)}`;
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error(`Failed to fetch URL. Status: ${res.status}`);
+        const text = await res.text();
+        const doc = new DOMParser().parseFromString(text, 'text/html');
+        const plainText = doc.body.textContent || text;
+        const cleanText = plainText.replace(/\s+/g, ' ').trim().slice(0, 15000);
+        return { toolName, executedAt, status: 'completed', url: args.url, content: cleanText };
+      }
+
       case 'render_web_artifact':
       case 'render_html_document': {
         const title = args?.title || 'Generated Artifact';
@@ -2717,12 +2614,6 @@ function BeatriceAgent({
     videoEnabledRef.current = false;
     videoStartingRef.current = false;
     setIsVideoEnabled(false);
-
-    if (sendNotice && sessionRef.current) {
-      setTimeout(() => {
-        sendTextToLive(`${settings.userName} closed the camera. Acknowledge it normally and keep the conversation going.`);
-      }, 150);
-    }
   };
 
   const startSession = async (options: { sendGreeting?: boolean } = {}): Promise<boolean> => {
@@ -2761,7 +2652,7 @@ function BeatriceAgent({
       userTranscriptBufferRef.current = '';
       lastSavedModelTranscriptRef.current = '';
       lastSavedUserTranscriptRef.current = '';
-      
+
       setLiveUserText('');
       setLiveModelText('');
 
@@ -2817,9 +2708,10 @@ function BeatriceAgent({
             systemInstruction,
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            tools:[{
-              functionDeclarations: GOOGLE_SERVICE_TOOLS,
-            }],
+            tools:[
+              { functionDeclarations: GOOGLE_SERVICE_TOOLS },
+              { googleSearch: {} } // Enable Google Search Grounding for live web queries
+            ],
           },
           callbacks: {
             onopen: () => {
@@ -2943,7 +2835,6 @@ function BeatriceAgent({
                 if (serverContent.interrupted) {
                   audioStreamerRef.current?.stop();
                   setIsAgentSpeaking(false);
-                  
                   saveModelBuffer();
                   return;
                 }
@@ -3010,7 +2901,7 @@ function BeatriceAgent({
               setIsActive(false);
               setConnecting(false);
               setIsAgentSpeaking(false);
-              
+
               setLiveUserText('');
               setLiveModelText('');
               setCurrentTranscript(null);
@@ -3095,7 +2986,7 @@ function BeatriceAgent({
     if (videoStartingRef.current) return;
 
     if (videoEnabledRef.current || isVideoEnabled) {
-      stopVideoStream(true);
+      stopVideoStream(false);
       return;
     }
 
@@ -3136,14 +3027,6 @@ function BeatriceAgent({
 
       videoEnabledRef.current = true;
       setIsVideoEnabled(true);
-
-      setTimeout(() => {
-        if (sessionGenerationRef.current !== activeVideoSessionGeneration) return;
-
-        sendTextToLive(
-          `${settings.userName} just opened the camera. Notice it in a normal human way, like you looked up and saw the view. Do not say you can assist. Say something like: Oh, yeah, I see it now. Then briefly describe only what is actually visible. If the visual input is unclear, say that.`
-        );
-      }, 300);
 
       if (videoIntervalRef.current) {
         clearInterval(videoIntervalRef.current);
@@ -3248,10 +3131,106 @@ function BeatriceAgent({
 
     updateLiveTranscript('user', `Attached file: ${safeName}`, 3000);
 
-    if (sessionRef.current) {
-      sendTextToLive(
-        `${settings.userName} attached a file named "${safeName}" with type "${fileType}". Acknowledge it normally. If you cannot actually parse the file contents from the current runtime, say that clearly and ask for readable text or backend parsing.`
-      );
+    if (!sessionRef.current) {
+      alert('Start the live session first to send files to the assistant.');
+      return;
+    }
+
+    try {
+      if (fileType.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX = 1280;
+            let w = img.width, h = img.height;
+            if (w > MAX || h > MAX) {
+              const ratio = w / h;
+              if (w > h) { w = MAX; h = MAX / ratio; }
+              else { h = MAX; w = MAX * ratio; }
+            }
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, w, h);
+            const b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            sendVideoToLive(b64);
+            sendTextToLive(`${settings.userName} attached an image named ${safeName}. Please describe what you see.`);
+          };
+          img.src = e.target?.result as string;
+        };
+        reader.readAsDataURL(file);
+      } else if (fileType.startsWith('video/')) {
+        const videoUrl = URL.createObjectURL(file);
+        const videoNode = document.createElement('video');
+        videoNode.src = videoUrl;
+        videoNode.muted = true;
+        videoNode.onloadeddata = () => {
+          videoNode.currentTime = videoNode.duration / 2 || 0.5;
+        };
+        videoNode.onseeked = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = videoNode.videoWidth || 640;
+          canvas.height = videoNode.videoHeight || 480;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(videoNode, 0, 0, canvas.width, canvas.height);
+          const b64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+          sendVideoToLive(b64);
+          sendTextToLive(`${settings.userName} attached a video named ${safeName}. I shared a key frame. Acknowledge it briefly.`);
+          URL.revokeObjectURL(videoUrl);
+        };
+      } else if (fileType === 'application/pdf' || safeName.toLowerCase().endsWith('.pdf')) {
+        let pdfjsLib = (window as any).pdfjsLib;
+        if (!pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = () => {
+              (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              pdfjsLib = (window as any).pdfjsLib;
+              resolve(true);
+            };
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let text = '';
+        for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map((item: any) => item.str).join(' ') + '\n';
+        }
+        sendTextToLive(`${settings.userName} attached a PDF document named ${safeName}. Here are the contents:\n\n${text.slice(0, 15000)}\n\nPlease read and acknowledge it.`);
+      } else if (safeName.toLowerCase().endsWith('.docx') || fileType.includes('wordprocessingml')) {
+        let mammoth = (window as any).mammoth;
+        if (!mammoth) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+            script.onload = () => {
+              mammoth = (window as any).mammoth;
+              resolve(true);
+            };
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        sendTextToLive(`${settings.userName} attached a Word document named ${safeName}. Here are the contents:\n\n${result.value.slice(0, 15000)}\n\nPlease read and acknowledge it.`);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target?.result as string;
+          sendTextToLive(`${settings.userName} attached a document named ${safeName}. Here are the contents:\n\n${content.slice(0, 15000)}\n\nPlease read and acknowledge it.`);
+        };
+        reader.readAsText(file);
+      }
+    } catch (err: any) {
+      console.error('File parsing error', err);
+      sendTextToLive(`I tried to upload a file named "${safeName}" but there was an error reading it: ${err.message}`);
     }
   };
 
@@ -3298,7 +3277,7 @@ function BeatriceAgent({
     setIsActive(false);
     setConnecting(false);
     setIsAgentSpeaking(false);
-    
+
     setLiveUserText('');
     setLiveModelText('');
     setCurrentTranscript(null);
@@ -3689,7 +3668,6 @@ function BeatriceAgent({
                     </div>
                   ))}
 
-                  {/* Real-time transcript for user inside chatbox */}
                   {liveUserText && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end">
                       <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">
@@ -3702,7 +3680,6 @@ function BeatriceAgent({
                     </motion.div>
                   )}
 
-                  {/* Real-time transcript for model inside chatbox */}
                   {liveModelText && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-start mt-2">
                       <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">
