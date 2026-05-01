@@ -53,9 +53,6 @@ import {
   Send,
   ExternalLink,
   Code2,
-  Image as ImageIcon,
-  Music,
-  Film,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
@@ -63,13 +60,9 @@ interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
-  streaming?: boolean;
   fileName?: string;
   fileType?: string;
-  fileSize?: number;
-  fileKind?: 'image' | 'audio' | 'video' | 'text' | 'document' | 'other';
-  filePreviewData?: string;
-  fileDownloadData?: string;
+  previewData?: string;
   toolName?: string;
   toolResult?: any;
   downloadData?: string;
@@ -98,26 +91,12 @@ interface AgentSettings {
   selectedVoice: string;
 }
 
-interface LocalStoredFile {
-  id: string;
-  name: string;
-  type: string;
-  size: number;
-  kind: ChatMessage['fileKind'];
-  dataUrl: string;
-  createdAt: number;
-}
-
 const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 const EBURON_LOGO_URL = 'https://eburon.ai/icon-eburon.svg';
 const PRODUCT_BRAND = 'VEP';
 const PRODUCT_FULL_NAME = 'Virtual Employee Persona';
-const MAX_STORED_FILE_PREVIEW_BYTES = 7 * 1024 * 1024;
-const LOCAL_FILE_DB_NAME = 'vep-local-files-db';
-const LOCAL_FILE_STORE_NAME = 'uploadedFiles';
-const VIDEO_STREAM_SNAPSHOT_INTERVAL_MS = 1000;
 
-const GEMINI_LIVE_VOICE_OPTIONS = [
+const GEMINI_LIVE_VOICE_OPTIONS =[
   { alias: 'Superman', id: 'Charon', vibe: 'deep, steady, grounded' },
   { alias: 'Wonder Woman', id: 'Kore', vibe: 'clear, composed, warm' },
   { alias: 'Batman', id: 'Fenrir', vibe: 'dark, firm, serious' },
@@ -212,7 +191,18 @@ const DEFAULT_SETTINGS: AgentSettings = {
   selectedVoice: 'Kore',
 };
 
-const GOOGLE_SERVICE_TOOLS = [
+const GOOGLE_SERVICE_TOOLS =[
+  {
+    name: 'url_fetch',
+    description: 'Fetch the text content of a URL or web page.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        url: { type: Type.STRING, description: 'The URL to fetch.' }
+      },
+      required: ['url'],
+    },
+  },
   {
     name: 'render_web_artifact',
     description:
@@ -263,7 +253,7 @@ const GOOGLE_SERVICE_TOOLS = [
         saveToDrive: { type: Type.BOOLEAN, description: 'If true, upload the HTML document to the user drive.' },
         emailTo: { type: Type.STRING, description: 'Optional email address to send the HTML document to. Use current_user if requested.' },
       },
-      required: ['title', 'html'],
+      required:['title', 'html'],
     },
   },
   {
@@ -276,7 +266,7 @@ const GOOGLE_SERVICE_TOOLS = [
         query: { type: Type.STRING, description: 'Mail search query, sender, subject, or keyword.' },
         limit: { type: Type.NUMBER, description: 'Maximum number of messages to fetch.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -319,7 +309,7 @@ const GOOGLE_SERVICE_TOOLS = [
         timeMin: { type: Type.STRING, description: 'Optional start datetime.' },
         timeMax: { type: Type.STRING, description: 'Optional end datetime.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -353,7 +343,7 @@ const GOOGLE_SERVICE_TOOLS = [
         location: { type: Type.STRING, description: 'New event location.' },
         description: { type: Type.STRING, description: 'New event description.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -379,7 +369,7 @@ const GOOGLE_SERVICE_TOOLS = [
         fileName: { type: Type.STRING, description: 'File name or search term if id is unknown.' },
         exportMimeType: { type: Type.STRING, description: 'Optional export MIME type, e.g. application/pdf or text/plain.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -434,7 +424,7 @@ const GOOGLE_SERVICE_TOOLS = [
         range: { type: Type.STRING, description: 'Sheet range, for example Sheet1!A1:D10.' },
         query: { type: Type.STRING, description: 'File name or search query if id unknown.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -470,7 +460,7 @@ const GOOGLE_SERVICE_TOOLS = [
       properties: {
         listId: { type: Type.STRING, description: 'Optional task list id, defaults to @default.' },
       },
-      required: [],
+      required:[],
     },
   },
   {
@@ -577,7 +567,7 @@ const GOOGLE_SERVICE_TOOLS = [
         terms: { type: Type.STRING, description: 'Important terms, scope, payment, obligations, duration, termination, confidentiality, etc.' },
         emailTo: { type: Type.STRING, description: 'Optional email address to send PDF to. Use current_user if requested.' },
       },
-      required: ['title', 'contractType', 'partyA', 'partyB', 'terms'],
+      required:['title', 'contractType', 'partyA', 'partyB', 'terms'],
     },
   },
 ];
@@ -626,8 +616,10 @@ body{font-family:Arial,sans-serif;background:#111;color:#fff;display:grid;place-
   }
 
   if (trimmed.toLowerCase().startsWith('<!doctype html')) return trimmed;
-  if (trimmed.toLowerCase().startsWith('<html')) return `<!DOCTYPE html>
-${trimmed}`;
+
+  if (trimmed.toLowerCase().startsWith('<html')) {
+    return `<!DOCTYPE html>\n${trimmed}`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -665,53 +657,29 @@ function makeHtmlArtifactFile(html: string, filenameBase: string) {
 function makeBlobDownloadData(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
+
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
 }
 
-function stringToBase64(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  bytes.forEach(byte => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
-}
-
-function splitBase64ForMime(base64: string): string {
-  const chunkSize = 76;
-  const chunks: string[] = [];
-  for (let i = 0; i < base64.length; i += chunkSize) {
-    chunks.push(base64.substring(i, i + chunkSize));
-  }
-  return chunks.join('
-');
-}
-
 function base64UrlEncode(value: string) {
-  return stringToBase64(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return btoa(unescape(encodeURIComponent(value)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+function arrayBufferToBase64(buffer: ArrayBuffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
+
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
+
   return btoa(binary);
-}
-
-function sanitizeEmailHeader(value: string) {
-  return String(value || '').replace(/[
-]+/g, ' ').trim();
-}
-
-function encodeEmailSubject(value: string) {
-  const clean = sanitizeEmailHeader(value);
-  if (/^[ -]*$/.test(clean)) return clean;
-  return `=?UTF-8?B?${stringToBase64(clean)}?=`;
 }
 
 function buildEmailRaw({
@@ -733,50 +701,45 @@ function buildEmailRaw({
     base64Content: string;
   };
 }) {
-  const headers = [
-    `To: ${sanitizeEmailHeader(to)}`,
-    cc ? `Cc: ${sanitizeEmailHeader(cc)}` : '',
-    bcc ? `Bcc: ${sanitizeEmailHeader(bcc)}` : '',
-    `Subject: ${encodeEmailSubject(subject)}`,
+  const headers =[
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : '',
+    bcc ? `Bcc: ${bcc}` : '',
+    `Subject: ${subject}`,
     'MIME-Version: 1.0',
   ].filter(Boolean);
 
   if (!attachment) {
-    const raw = [
+    const raw =[
       ...headers,
       'Content-Type: text/plain; charset="UTF-8"',
-      'Content-Transfer-Encoding: 8bit',
       '',
       body,
-    ].join('
-');
+    ].join('\r\n');
 
     return base64UrlEncode(raw);
   }
 
-  const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const safeFilename = sanitizeEmailHeader(attachment.filename || 'attachment');
+  const boundary = `boundary_${Date.now()}`;
 
-  const raw = [
+  const raw =[
     ...headers,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
     '',
     body,
     '',
     `--${boundary}`,
-    `Content-Type: ${attachment.mimeType || 'application/octet-stream'}; name="${safeFilename}"`,
+    `Content-Type: ${attachment.mimeType}; name="${attachment.filename}"`,
     'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${safeFilename}"`,
+    `Content-Disposition: attachment; filename="${attachment.filename}"`,
     '',
-    splitBase64ForMime(attachment.base64Content),
+    attachment.base64Content,
     '',
     `--${boundary}--`,
-  ].join('
-');
+  ].join('\r\n');
 
   return base64UrlEncode(raw);
 }
@@ -871,251 +834,6 @@ Note:
 This draft is generated for convenience and should be reviewed by a qualified legal professional before signing.`;
 }
 
-function getFileKind(file: File): ChatMessage['fileKind'] {
-  const type = file.type || '';
-  const name = file.name.toLowerCase();
-
-  if (type.startsWith('image/')) return 'image';
-  if (type.startsWith('audio/')) return 'audio';
-  if (type.startsWith('video/')) return 'video';
-  if (type.startsWith('text/')) return 'text';
-  if (/\.(txt|md|json|csv|html|css|js|jsx|ts|tsx|py|xml|yaml|yml|log)$/i.test(name)) return 'text';
-  if (/\.(pdf|doc|docx|ppt|pptx|xls|xlsx)$/i.test(name)) return 'document';
-
-  return 'other';
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function fileToBase64(file: File): Promise<string> {
-  const dataUrl = await fileToDataUrl(file);
-  return dataUrl.split(',')[1] || '';
-}
-
-async function readTextFile(file: File, maxChars = 40000) {
-  const text = await file.text();
-  return text.slice(0, maxChars);
-}
-
-function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function floatToPcm16Base64(samples: Float32Array) {
-  const buffer = new ArrayBuffer(samples.length * 2);
-  const view = new DataView(buffer);
-
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-
-  return arrayBufferToBase64(buffer);
-}
-
-function downsampleAudioBuffer(buffer: AudioBuffer, targetSampleRate = 16000) {
-  const channels = buffer.numberOfChannels;
-  const inputSampleRate = buffer.sampleRate;
-  const inputLength = buffer.length;
-  const outputLength = Math.floor(inputLength * targetSampleRate / inputSampleRate);
-  const output = new Float32Array(outputLength);
-
-  for (let i = 0; i < outputLength; i++) {
-    const inputIndex = Math.min(inputLength - 1, Math.floor(i * inputSampleRate / targetSampleRate));
-    let sample = 0;
-
-    for (let channel = 0; channel < channels; channel++) {
-      sample += buffer.getChannelData(channel)[inputIndex] || 0;
-    }
-
-    output[i] = sample / Math.max(channels, 1);
-  }
-
-  return output;
-}
-
-async function decodeAudioFileToPcm16Chunks(file: File, chunkSeconds = 0.5) {
-  const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) return [];
-
-  const context = new AudioContextClass();
-  const arrayBuffer = await file.arrayBuffer();
-  const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
-  const samples = downsampleAudioBuffer(audioBuffer, 16000);
-  const chunkSize = Math.max(1, Math.floor(16000 * chunkSeconds));
-  const chunks: string[] = [];
-
-  for (let i = 0; i < samples.length; i += chunkSize) {
-    chunks.push(floatToPcm16Base64(samples.slice(i, i + chunkSize)));
-  }
-
-  try {
-    await context.close();
-  } catch (e) {}
-
-  return chunks;
-}
-
-async function sampleVideoFrames(file: File, count = 6): Promise<string[]> {
-  const url = URL.createObjectURL(file);
-
-  try {
-    const video = document.createElement('video');
-    video.src = url;
-    video.muted = true;
-    video.playsInline = true;
-    video.crossOrigin = 'anonymous';
-
-    await new Promise<void>((resolve, reject) => {
-      video.onloadedmetadata = () => resolve();
-      video.onerror = () => reject(new Error('Could not load video metadata.'));
-    });
-
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const frames: string[] = [];
-
-    if (!ctx) return frames;
-
-    for (let i = 0; i < count; i++) {
-      const time = Math.min(duration - 0.05, Math.max(0, duration * ((i + 1) / (count + 1))));
-
-      await new Promise<void>((resolve) => {
-        const done = () => resolve();
-        video.onseeked = done;
-        video.currentTime = time;
-      });
-
-      canvas.width = Math.max(1, video.videoWidth || 1280);
-      canvas.height = Math.max(1, video.videoHeight || 720);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      frames.push(canvas.toDataURL('image/jpeg', 0.62).split(',')[1] || '');
-      await delay(80);
-    }
-
-    return frames.filter(Boolean);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function isClosedSocketError(error: any) {
-  const message = String(error?.message || error || '').toLowerCase();
-  return message.includes('closing') || message.includes('closed') || message.includes('websocket');
-}
-
-function formatFileSize(bytes?: number) {
-  if (!bytes) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function openLocalFileDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(LOCAL_FILE_DB_NAME, 1);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(LOCAL_FILE_STORE_NAME)) {
-        const store = db.createObjectStore(LOCAL_FILE_STORE_NAME, { keyPath: 'id' });
-        store.createIndex('createdAt', 'createdAt');
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Could not open local file database.'));
-  });
-}
-
-async function saveLocalFile(file: LocalStoredFile) {
-  const db = await openLocalFileDb();
-
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(LOCAL_FILE_STORE_NAME, 'readwrite');
-    tx.objectStore(LOCAL_FILE_STORE_NAME).put(file);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    tx.onerror = () => {
-      db.close();
-      reject(tx.error || new Error('Could not save local file.'));
-    };
-  });
-}
-
-async function readLocalFiles() {
-  const db = await openLocalFileDb();
-
-  return new Promise<LocalStoredFile[]>((resolve, reject) => {
-    const tx = db.transaction(LOCAL_FILE_STORE_NAME, 'readonly');
-    const request = tx.objectStore(LOCAL_FILE_STORE_NAME).getAll();
-    request.onsuccess = () => {
-      db.close();
-      resolve((request.result || []).sort((a, b) => b.createdAt - a.createdAt));
-    };
-    request.onerror = () => {
-      db.close();
-      reject(request.error || new Error('Could not read local files.'));
-    };
-  });
-}
-
-function AttachmentIcon({ kind }: { kind?: ChatMessage['fileKind'] }) {
-  if (kind === 'image') return <ImageIcon className="h-3.5 w-3.5" />;
-  if (kind === 'audio') return <Music className="h-3.5 w-3.5" />;
-  if (kind === 'video') return <Film className="h-3.5 w-3.5" />;
-  return <Upload className="h-3.5 w-3.5" />;
-}
-
-function ChatAttachmentPreview({ msg }: { msg: ChatMessage }) {
-  if (!msg.fileName) return null;
-
-  return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-white/10 bg-black/30">
-      <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] text-lime-200">
-        <AttachmentIcon kind={msg.fileKind} />
-        <span className="min-w-0 flex-1 truncate">{msg.fileName}</span>
-        {msg.fileSize && <span className="shrink-0 text-zinc-500">{formatFileSize(msg.fileSize)}</span>}
-      </div>
-
-      {msg.filePreviewData && msg.fileKind === 'image' && (
-        <img src={msg.filePreviewData} alt={msg.fileName} className="max-h-48 w-full object-cover" />
-      )}
-
-      {msg.filePreviewData && msg.fileKind === 'audio' && (
-        <div className="px-2 pb-2">
-          <audio src={msg.filePreviewData} controls className="w-full" />
-        </div>
-      )}
-
-      {msg.filePreviewData && msg.fileKind === 'video' && (
-        <video src={msg.filePreviewData} controls playsInline className="max-h-56 w-full bg-black" />
-      )}
-
-      {msg.fileDownloadData && (
-        <a
-          href={msg.fileDownloadData}
-          download={msg.fileName}
-          className="flex w-full items-center justify-center gap-2 border-t border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/10"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Download file
-        </a>
-      )}
-    </div>
-  );
-}
-
 function OneLineStreamingTranscript({
   text,
   role,
@@ -1180,7 +898,7 @@ function LimeVoiceOrb({
     bandsRef.current = speakerBands;
     activeRef.current = isActive;
     speakingRef.current = isAgentSpeaking;
-  }, [isActive, isAgentSpeaking, speakerBands, speakerLevel]);
+  },[isActive, isAgentSpeaking, speakerBands, speakerLevel]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1210,7 +928,7 @@ function LimeVoiceOrb({
 
     const makeOrbPath = (cx: number, cy: number, radius: number, pulse: number, time: number) => {
       const path = new Path2D();
-      const points: Array<{ x: number; y: number }> = [];
+      const points: Array<{ x: number; y: number }> =[];
       const bands = bandsRef.current.length ? bandsRef.current : Array(20).fill(0);
       const live = activeRef.current && speakingRef.current;
       const count = 112;
@@ -1303,9 +1021,27 @@ function LimeVoiceOrb({
       ctx.save();
       ctx.clip(orbPath);
       ctx.globalCompositeOperation = 'screen';
-      drawGlow(cx - 38 + Math.sin(time * 0.7) * 12, cy - 34 + Math.cos(time * 0.55) * 10, 78 + pulse * 12, 'rgba(236,252,203,0.52)', 'rgba(236,252,203,0)');
-      drawGlow(cx + 40 + Math.cos(time * 0.62) * 14, cy + 24 + Math.sin(time * 0.75) * 12, 90 + pulse * 18, 'rgba(16,185,129,0.44)', 'rgba(16,185,129,0)');
-      drawGlow(cx - 6 + Math.sin(time * 0.5) * 18, cy + 34 + Math.cos(time * 0.46) * 10, 98, 'rgba(132,204,22,0.22)', 'rgba(132,204,22,0)');
+      drawGlow(
+        cx - 38 + Math.sin(time * 0.7) * 12,
+        cy - 34 + Math.cos(time * 0.55) * 10,
+        78 + pulse * 12,
+        'rgba(236,252,203,0.52)',
+        'rgba(236,252,203,0)'
+      );
+      drawGlow(
+        cx + 40 + Math.cos(time * 0.62) * 14,
+        cy + 24 + Math.sin(time * 0.75) * 12,
+        90 + pulse * 18,
+        'rgba(16,185,129,0.44)',
+        'rgba(16,185,129,0)'
+      );
+      drawGlow(
+        cx - 6 + Math.sin(time * 0.5) * 18,
+        cy + 34 + Math.cos(time * 0.46) * 10,
+        98,
+        'rgba(132,204,22,0.22)',
+        'rgba(132,204,22,0)'
+      );
       ctx.restore();
 
       ctx.save();
@@ -1328,7 +1064,7 @@ function LimeVoiceOrb({
 
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  },[]);
 
   return (
     <div className="relative flex h-72 w-72 items-center justify-center">
@@ -1354,7 +1090,7 @@ function StartIconMicVisualizer({
 }) {
   const innerBands = micBands?.length
     ? micBands.slice(5, 14)
-    : [0.35, 0.5, 0.72, 0.9, 1, 0.82, 0.64, 0.46, 0.32].map(n => n * micLevel);
+    :[0.35, 0.5, 0.72, 0.9, 1, 0.82, 0.64, 0.46, 0.32].map(n => n * micLevel);
 
   return (
     <button
@@ -1364,9 +1100,13 @@ function StartIconMicVisualizer({
       className="group relative flex h-20 w-20 items-center justify-center"
     >
       <motion.div
-        animate={{ opacity: isActive ? 0.16 + micLevel * 0.3 : 0.08 }}
+        animate={{
+          opacity: isActive ? 0.16 + micLevel * 0.3 : 0.08,
+        }}
         transition={{ duration: 0.045 }}
-        className={`absolute inset-0 rounded-full ${isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'}`}
+        className={`absolute inset-0 rounded-full ${
+          isMuted ? 'bg-red-500/20' : 'bg-lime-300/30'
+        }`}
       />
 
       <div
@@ -1416,14 +1156,14 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_SETTINGS);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
+  const[authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
+  const[authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
+  const[authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
-  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const[showAuthPassword, setShowAuthPassword] = useState(false);
   const [showAuthConfirmPassword, setShowAuthConfirmPassword] = useState(false);
 
   useEffect(() => {
@@ -1436,7 +1176,7 @@ export default function App() {
       link.href = 'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap';
       document.head.appendChild(link);
     }
-  }, []);
+  },[]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -1493,7 +1233,7 @@ export default function App() {
     });
 
     return () => unsub();
-  }, []);
+  },[]);
 
   const getAuthErrorMessage = (error: any) => {
     const code = String(error?.code || '');
@@ -1543,7 +1283,7 @@ export default function App() {
       console.error(error);
 
       if (error && error.message && error.message.includes('missing initial state')) {
-        setAuthMessage({ type: 'error', text: 'Authentication failed due to browser privacy settings. Open the app in a new tab and try again.' });
+        setAuthMessage({ type: 'error', text: "Authentication failed due to browser privacy settings. Open the app in a new tab and try again." });
       } else {
         setAuthMessage({ type: 'error', text: getAuthErrorMessage(error) });
       }
@@ -1558,11 +1298,13 @@ export default function App() {
     setAuthMessage(null);
 
     const email = authEmail.trim();
-    const password = authPassword;
+    const password = authPassword.trim();
     const fullName = authName.trim();
 
     try {
-      if (!email) throw new Error('Enter your email address.');
+      if (!email) {
+        throw new Error('Enter your email address.');
+      }
 
       if (authMode === 'reset') {
         await sendPasswordResetEmail(auth, email);
@@ -1571,12 +1313,22 @@ export default function App() {
         return;
       }
 
-      if (!password) throw new Error('Enter your password.');
+      if (!password) {
+        throw new Error('Enter your password.');
+      }
 
       if (authMode === 'signup') {
-        if (!fullName) throw new Error('Enter your full name.');
-        if (password.length < 6) throw new Error('Use at least 6 characters for the password.');
-        if (password !== authConfirmPassword) throw new Error('Passwords do not match.');
+        if (!fullName) {
+          throw new Error('Enter your full name.');
+        }
+
+        if (password.length < 6) {
+          throw new Error('Use at least 6 characters for the password.');
+        }
+
+        if (password !== authConfirmPassword.trim()) {
+          throw new Error('Passwords do not match.');
+        }
 
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, { displayName: fullName });
@@ -1621,7 +1373,10 @@ export default function App() {
         : 'Login to your account';
 
     return (
-      <div className="relative min-h-[100dvh] overflow-hidden bg-[#050505] text-white" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
+      <div
+        className="relative min-h-[100dvh] overflow-hidden bg-[#050505] text-white"
+        style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
+      >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_8%,rgba(190,242,100,0.13),transparent_34%),linear-gradient(180deg,#050505,#020302)]" />
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.04]"
@@ -1646,24 +1401,56 @@ export default function App() {
               {isSignUp && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <UserRound className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input value={authName} onChange={(e) => setAuthName(e.target.value)} placeholder="Full name" autoComplete="name" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
+                  <input
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                    placeholder="Full name"
+                    autoComplete="name"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
                 </label>
               )}
 
               <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                 <Mail className="h-4 w-4 shrink-0 text-zinc-500" />
-                <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} type="email" placeholder="Email" autoComplete="email" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
+                <input
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  type="email"
+                  placeholder="Email"
+                  autoComplete="email"
+                  className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                />
               </label>
 
               {!isReset && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} type={showAuthPassword ? 'text' : 'password'} placeholder="Password" autoComplete={isSignUp ? 'new-password' : 'current-password'} className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
-                  <button type="button" onClick={() => setShowAuthPassword(value => !value)} aria-label={showAuthPassword ? 'Hide password' : 'Show password'} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200">
+                  <input
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    type={showAuthPassword ? 'text' : 'password'}
+                    placeholder="Password"
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthPassword(value => !value)}
+                    aria-label={showAuthPassword ? 'Hide password' : 'Show password'}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
+                  >
                     {showAuthPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                   {!isSignUp && (
-                    <button type="button" onClick={() => { setAuthMode('reset'); setAuthMessage(null); }} className="text-xs font-bold text-lime-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('reset');
+                        setAuthMessage(null);
+                      }}
+                      className="text-xs font-bold text-lime-200"
+                    >
                       Forgot?
                     </button>
                   )}
@@ -1673,8 +1460,20 @@ export default function App() {
               {isSignUp && (
                 <label className="flex h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-4 focus-within:border-lime-300/40">
                   <LockKeyhole className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <input value={authConfirmPassword} onChange={(e) => setAuthConfirmPassword(e.target.value)} type={showAuthConfirmPassword ? 'text' : 'password'} placeholder="Confirm password" autoComplete="new-password" className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600" />
-                  <button type="button" onClick={() => setShowAuthConfirmPassword(value => !value)} aria-label={showAuthConfirmPassword ? 'Hide confirm password' : 'Show confirm password'} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200">
+                  <input
+                    value={authConfirmPassword}
+                    onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                    type={showAuthConfirmPassword ? 'text' : 'password'}
+                    placeholder="Confirm password"
+                    autoComplete="new-password"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-medium text-white outline-none placeholder:text-zinc-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthConfirmPassword(value => !value)}
+                    aria-label={showAuthConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-200"
+                  >
                     {showAuthConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </label>
@@ -1692,7 +1491,11 @@ export default function App() {
                 </div>
               )}
 
-              <button type="submit" disabled={authBusy} className="mt-7 flex h-14 w-full items-center justify-center rounded-full bg-lime-300 text-sm font-bold text-black shadow-[0_18px_48px_rgba(190,242,100,0.18)] transition active:scale-[0.985] disabled:opacity-60">
+              <button
+                type="submit"
+                disabled={authBusy}
+                className="mt-7 flex h-14 w-full items-center justify-center rounded-full bg-lime-300 text-sm font-bold text-black shadow-[0_18px_48px_rgba(190,242,100,0.18)] transition active:scale-[0.985] disabled:opacity-60"
+              >
                 {authBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : isReset ? 'Send reset link' : isSignUp ? 'Sign up' : 'Sign in'}
               </button>
 
@@ -1704,18 +1507,31 @@ export default function App() {
                     <div className="h-px flex-1 bg-white/10" />
                   </div>
 
-                  <button type="button" onClick={handleGoogleLogin} disabled={authBusy} className="flex h-14 w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-zinc-100 transition hover:border-lime-300/30 hover:bg-lime-300/10 active:scale-[0.985] disabled:opacity-60">
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={authBusy}
+                    className="flex h-14 w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-zinc-100 transition hover:border-lime-300/30 hover:bg-lime-300/10 active:scale-[0.985] disabled:opacity-60"
+                  >
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-base font-black text-black">G</span>
                     Continue with Google
                   </button>
                 </>
               )}
             </form>
+
           </section>
 
           <footer className="text-center text-sm text-zinc-500">
             {isSignUp ? 'Back to ' : isReset ? 'Remembered it? ' : 'Create account? '}
-            <button type="button" onClick={() => { setAuthMode(isSignUp || isReset ? 'signin' : 'signup'); setAuthMessage(null); }} className="font-bold text-lime-200">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode(isSignUp || isReset ? 'signin' : 'signup');
+                setAuthMessage(null);
+              }}
+              className="font-bold text-lime-200"
+            >
               {isSignUp || isReset ? 'Sign in' : 'Sign up'}
             </button>
           </footer>
@@ -1737,52 +1553,47 @@ function BeatriceAgent({
   initialSettings: AgentSettings;
 }) {
   const [isActive, setIsActive] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const[connecting, setConnecting] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
-  const [micBands, setMicBands] = useState<number[]>(Array(20).fill(0));
+  const[micBands, setMicBands] = useState<number[]>(Array(20).fill(0));
   const [speakerLevel, setSpeakerLevel] = useState(0);
-  const [speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
-  const [tasks, setTasks] = useState<ActionTask[]>([]);
+  const[speakerBands, setSpeakerBands] = useState<number[]>(Array(20).fill(0));
+  const[tasks, setTasks] = useState<ActionTask[]>([]);
   const [historyContext, setHistoryContext] = useState<string>('');
   const [historyMsgs, setHistoryMsgs] = useState<ChatMessage[]>([]);
-  const [localFiles, setLocalFiles] = useState<LocalStoredFile[]>([]);
-  const [currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model'; text: string } | null>(null);
+  const[currentTranscript, setCurrentTranscript] = useState<{ role: 'user' | 'model'; text: string } | null>(null);
 
   const [isMuted, setIsMuted] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const[isVideoEnabled, setIsVideoEnabled] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [showSidebar, setShowSidebar] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const[showProfile, setShowProfile] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [settings, setSettings] = useState<AgentSettings>({ ...DEFAULT_SETTINGS, ...initialSettings });
+  const[settings, setSettings] = useState<AgentSettings>({
+    ...DEFAULT_SETTINGS,
+    ...initialSettings,
+  });
 
   const aiRef = useRef<GoogleGenAI | null>(null);
   const sessionRef = useRef<any>(null);
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const audioRecorderRef = useRef<AudioRecorder | null>(null);
-  const startPromiseRef = useRef<Promise<boolean> | null>(null);
 
   const transcriptTimeoutRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   const isActiveRef = useRef(false);
-  const isClosingRef = useRef(false);
   const micAnimationFrameRef = useRef<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoIntervalRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const modelTranscriptBufferRef = useRef('');
   const userTranscriptBufferRef = useRef('');
   const lastSavedModelTranscriptRef = useRef('');
   const lastSavedUserTranscriptRef = useRef('');
-
-  const sessionGenerationRef = useRef(0);
-  const videoEnabledRef = useRef(false);
-  const videoStartingRef = useRef(false);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -1811,11 +1622,15 @@ function BeatriceAgent({
   }, [isActive]);
 
   useEffect(() => {
-    const historyRef = query(ref(rtdb, 'users/' + user.uid + '/messages'), orderByChild('timestamp'), limitToLast(160));
+    const historyRef = query(
+      ref(rtdb, 'users/' + user.uid + '/messages'),
+      orderByChild('timestamp'),
+      limitToLast(160)
+    );
 
     const unsub = onValue(historyRef, (snap) => {
       const msgs: string[] = [];
-      const rawMsgs: ChatMessage[] = [];
+      const rawMsgs: ChatMessage[] =[];
 
       snap.forEach(child => {
         const m = child.val() as ChatMessage;
@@ -1824,25 +1639,20 @@ function BeatriceAgent({
       });
 
       setHistoryMsgs(rawMsgs);
-      setHistoryContext(msgs.length > 0 ? 'Previous conversation for context memory:
-' + msgs.slice(-36).join('
-') : '');
+
+      if (msgs.length > 0) {
+        setHistoryContext('Previous conversation for context memory:\n' + msgs.slice(-36).join('\n'));
+      } else {
+        setHistoryContext('');
+      }
     });
 
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
     if (apiKey) aiRef.current = new GoogleGenAI({ apiKey });
 
-    audioStreamerRef.current = audioStreamerRef.current || new AudioStreamer();
-
-    let cancelled = false;
-    readLocalFiles()
-      .then(files => {
-        if (!cancelled) setLocalFiles(files);
-      })
-      .catch(error => console.error('Local file database read failed:', error));
+    audioStreamerRef.current = new AudioStreamer();
 
     return () => {
-      cancelled = true;
       unsub();
       stopSession();
     };
@@ -1853,35 +1663,9 @@ function BeatriceAgent({
     [settings.selectedVoice]
   );
 
-  const chatMessagesWithStreaming = useMemo(() => {
-    if (!currentTranscript?.text.trim()) return historyMsgs;
-
-    const liveText = currentTranscript.text.trim();
-    const lastMessage = historyMsgs[historyMsgs.length - 1];
-
-    if (lastMessage && lastMessage.role === currentTranscript.role && lastMessage.text.trim() === liveText) {
-      return historyMsgs;
-    }
-
-    return [
-      ...historyMsgs,
-      {
-        role: currentTranscript.role,
-        text: liveText,
-        timestamp: Date.now(),
-        streaming: true,
-      },
-    ];
-  }, [currentTranscript, historyMsgs]);
-
-  useEffect(() => {
-    if (!showSidebar || !chatScrollRef.current) return;
-    chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [chatMessagesWithStreaming, showSidebar]);
-
   const saveMessage = (role: 'user' | 'model', text: string, extra?: Partial<ChatMessage>) => {
     const clean = text.trim();
-    if (!clean) return;
+    if (!clean && !extra?.previewData && !extra?.fileName) return;
 
     try {
       const msgRef = push(ref(rtdb, 'users/' + user.uid + '/messages'));
@@ -1923,7 +1707,9 @@ function BeatriceAgent({
     setCurrentTranscript({ role, text: clean });
 
     if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
-    transcriptTimeoutRef.current = setTimeout(() => setCurrentTranscript(null), clearDelay);
+    transcriptTimeoutRef.current = setTimeout(() => {
+      setCurrentTranscript(null);
+    }, clearDelay);
   };
 
   const startMicVisualizer = () => {
@@ -1937,7 +1723,7 @@ function BeatriceAgent({
 
       try {
         if (recorder && typeof recorder.getFrequencyBands === 'function') {
-          const bands = recorder.getFrequencyBands(20) || [];
+          const bands = recorder.getFrequencyBands(20) ||[];
           nextBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
           const frequencyAverage = nextBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextBands.length, 1);
           const recorderLevel = typeof recorder.getLevel === 'function' ? recorder.getLevel() : 0;
@@ -1953,7 +1739,7 @@ function BeatriceAgent({
 
       try {
         if (streamer && typeof streamer.getFrequencyBands === 'function') {
-          const bands = streamer.getFrequencyBands(20) || [];
+          const bands = streamer.getFrequencyBands(20) ||[];
           nextSpeakerBands = bands.map((n: number) => Math.min(1, Math.max(0, Number(n || 0))));
           const frequencyAverage = nextSpeakerBands.reduce((sum: number, n: number) => sum + n, 0) / Math.max(nextSpeakerBands.length, 1);
           const streamerLevel = typeof streamer.getLevel === 'function' ? streamer.getLevel() : 0;
@@ -1984,7 +1770,6 @@ function BeatriceAgent({
         const current = prev[i] || 0;
         return current + (band - current) * 0.48;
       }));
-
       micAnimationFrameRef.current = requestAnimationFrame(tick);
     };
 
@@ -2002,86 +1787,28 @@ function BeatriceAgent({
   };
 
   const sendTextToLive = (text: string) => {
-    const session = sessionRef.current;
-    if (isClosingRef.current) return;
-    if (!session || typeof session.sendRealtimeInput !== 'function') return;
-
-    try {
-      session.sendRealtimeInput({ text });
-    } catch (error) {
-      if (!isClosedSocketError(error)) console.error('Live text send failed:', error);
-    }
+    if (!sessionRef.current || typeof sessionRef.current.sendRealtimeInput !== 'function') return;
+    sessionRef.current.sendRealtimeInput([{ text }]);
   };
 
   const sendAudioToLive = (base64: string) => {
-    const session = sessionRef.current;
-    if (isClosingRef.current) return;
-    if (!isActiveRef.current) return;
-    if (isMutedRef.current) return;
-    if (!session || typeof session.sendRealtimeInput !== 'function') return;
-
-    try {
-      session.sendRealtimeInput({
-        audio: {
-          data: base64,
-          mimeType: 'audio/pcm;rate=16000',
-        },
-      });
-    } catch (error) {
-      if (!isClosedSocketError(error)) console.error('Live audio send failed:', error);
-    }
-  };
-
-  const sendVideoToLive = (base64Data: string, mimeType = 'image/jpeg') => {
-    const session = sessionRef.current;
-    if (isClosingRef.current) return;
-    if (!isActiveRef.current) return;
-    if (!session || typeof session.sendRealtimeInput !== 'function') return;
-
-    try {
-      session.sendRealtimeInput({
-        video: {
-          data: base64Data,
-          mimeType,
-        },
-      });
-    } catch (error) {
-      if (!isClosedSocketError(error)) console.error('Live video send failed:', error);
-    }
-  };
-
-  const sendInlineFileToLive = (base64Data: string, mimeType: string, instructionText: string) => {
-    const session: any = sessionRef.current;
-    if (isClosingRef.current) return false;
-    if (!session) return false;
-
-    try {
-      if (typeof session.sendClientContent === 'function') {
-        session.sendClientContent({
-          turns: [
-            {
-              role: 'user',
-              parts: [
-                { text: instructionText },
-                {
-                  inlineData: {
-                    mimeType,
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-          turnComplete: true,
-        });
-        return true;
+    if (!sessionRef.current || typeof sessionRef.current.sendRealtimeInput !== 'function') return;
+    sessionRef.current.sendRealtimeInput([{
+      inlineData: {
+        mimeType: 'audio/pcm;rate=16000',
+        data: base64,
       }
-    } catch (error) {
-      if (!isClosedSocketError(error)) console.error('Inline file send failed:', error);
-    }
+    }]);
+  };
 
-    sendTextToLive(instructionText);
-    return false;
+  const sendVideoToLive = (base64Data: string) => {
+    if (!sessionRef.current || typeof sessionRef.current.sendRealtimeInput !== 'function') return;
+    sessionRef.current.sendRealtimeInput([{
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: base64Data,
+      }
+    }]);
   };
 
   const sendChatMessage = (e?: FormEvent) => {
@@ -2108,7 +1835,7 @@ function BeatriceAgent({
     const token = localStorage.getItem('googleAccessToken');
 
     if (!token) {
-      throw new Error('Google services are not connected. Sign in with Google again from Profile.');
+      throw new Error('No access token. Please reconnect Google permissions from your Profile.');
     }
 
     const res = await fetch(url, {
@@ -2121,7 +1848,7 @@ function BeatriceAgent({
 
     if (res.status === 401 || res.status === 403) {
       localStorage.removeItem('googleAccessToken');
-      throw new Error('Google permission expired or was revoked. Sign in with Google again from Profile to reconnect Gmail, Drive, and Calendar.');
+      throw new Error('Google connection expired or missing permissions. Please reconnect your Google account from the Profile page.');
     }
 
     if (!res.ok) {
@@ -2147,7 +1874,7 @@ function BeatriceAgent({
   const getCurrentUserEmail = () => user.email || '';
 
   const searchDriveFirst = async (q: string) => {
-    const escaped = q.replace(/'/g, "\'");
+    const escaped = q.replace(/'/g, "\\'");
     const result = await googleJson(
       `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime)&pageSize=1`
     );
@@ -2165,7 +1892,7 @@ function BeatriceAgent({
       await googleJson(`https://docs.googleapis.com/v1/documents/${doc.documentId}:batchUpdate`, {
         method: 'POST',
         body: JSON.stringify({
-          requests: [
+          requests:[
             {
               insertText: {
                 location: { index: 1 },
@@ -2196,23 +1923,15 @@ function BeatriceAgent({
     const metadata: any = { name: fileName };
     if (folderId) metadata.parents = [folderId];
 
-    const boundary = `boundary_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const boundary = `boundary_${Date.now()}`;
 
     const multipartBody =
-      `--${boundary}
-` +
-      'Content-Type: application/json; charset=UTF-8
-
-' +
+      `--${boundary}\r\n` +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
       JSON.stringify(metadata) +
-      `
---${boundary}
-` +
-      `Content-Type: ${mimeType}
-
-` +
-      `${content || ''}
-` +
+      `\r\n--${boundary}\r\n` +
+      `Content-Type: ${mimeType}\r\n\r\n` +
+      `${content || ''}\r\n` +
       `--${boundary}--`;
 
     return googleFetch(
@@ -2258,6 +1977,23 @@ function BeatriceAgent({
     const executedAt = new Date().toISOString();
 
     switch (toolName) {
+      case 'url_fetch': {
+        try {
+          const fetchRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(args.url)}`);
+          if (!fetchRes.ok) throw new Error(`HTTP Error ${fetchRes.status}`);
+          const fetchData = await fetchRes.json();
+          const rawHtml = fetchData.contents || '';
+          
+          const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
+          const text = doc.body?.textContent || '';
+          const cleanText = text.replace(/\s+/g, ' ').trim().slice(0, 20000);
+          
+          return { toolName, executedAt, status: 'completed', text: cleanText || 'No text found at URL.' };
+        } catch (err: any) {
+          throw new Error(`Failed to fetch URL: ${err.message}`);
+        }
+      }
+
       case 'render_web_artifact':
       case 'render_html_document': {
         const title = args?.title || 'Generated Artifact';
@@ -2279,20 +2015,22 @@ function BeatriceAgent({
         const emailTo = args.emailTo === 'current_user' ? getCurrentUserEmail() : args.emailTo;
 
         if (args.saveToDrive) {
-          driveFile = await uploadTextFileToDrive(htmlFile.htmlPreviewFilename, htmlFile.html, 'text/html');
+          driveFile = await uploadTextFileToDrive(
+            htmlFile.htmlPreviewFilename,
+            htmlFile.html,
+            'text/html'
+          );
         }
 
         if (emailTo) {
           emailResult = await sendGmail({
             to: emailTo,
             subject: title,
-            body: `${summary}
-
-Attached is the standalone HTML artifact. Open it in a browser to view it.`,
+            body: `${summary}\n\nAttached is the standalone HTML artifact. Open it in a browser to view it.`,
             attachment: {
               filename: htmlFile.htmlPreviewFilename,
               mimeType: 'text/html',
-              base64Content: stringToBase64(htmlFile.html),
+              base64Content: btoa(unescape(encodeURIComponent(htmlFile.html))),
             },
           });
         }
@@ -2320,12 +2058,12 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
         );
 
         const messages = await Promise.all(
-          (list.messages || []).map(async (m: any) => {
+          (list.messages ||[]).map(async (m: any) => {
             const msg = await googleJson(
               `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
             );
 
-            const headers = msg.payload?.headers || [];
+            const headers = msg.payload?.headers ||[];
             const findHeader = (name: string) => headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
 
             return {
@@ -2377,7 +2115,7 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
           `https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime&maxResults=20&timeMin=${encodeURIComponent(range.timeMin)}&timeMax=${encodeURIComponent(range.timeMax)}`
         );
 
-        return { toolName, executedAt, status: 'completed', range, events: events.items || [] };
+        return { toolName, executedAt, status: 'completed', range, events: events.items ||[] };
       }
 
       case 'calendar_create_event': {
@@ -2452,7 +2190,7 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
       case 'drive_search': {
         const q = args.query || '';
         const limit = Math.min(Number(args.limit || 10), 50);
-        const escaped = q.replace(/'/g, "\'");
+        const escaped = q.replace(/'/g, "\\'");
         let mimeClause = '';
 
         if (args.fileType) {
@@ -2468,7 +2206,7 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
           `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name contains '${escaped}' and trashed = false${mimeClause}`)}&fields=files(id,name,mimeType,webViewLink,webContentLink,modifiedTime,size)&pageSize=${limit}`
         );
 
-        return { toolName, executedAt, status: 'completed', files: result.files || [] };
+        return { toolName, executedAt, status: 'completed', files: result.files ||[] };
       }
 
       case 'drive_read_file': {
@@ -2527,12 +2265,19 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
       }
 
       case 'drive_upload_file': {
-        const result = await uploadTextFileToDrive(args.fileName, args.content || '', args.mimeType || 'text/plain', args.folderId);
+        const result = await uploadTextFileToDrive(
+          args.fileName,
+          args.content || '',
+          args.mimeType || 'text/plain',
+          args.folderId
+        );
+
         return { toolName, executedAt, status: 'completed', file: result };
       }
 
       case 'docs_create': {
         const doc = await createGoogleDoc(args.title, args.content || '');
+
         let pdfDownload: any = {};
         let emailResult: any = null;
 
@@ -2589,7 +2334,7 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
           await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
             method: 'POST',
             body: JSON.stringify({
-              requests: [
+              requests:[
                 {
                   deleteContentRange: {
                     range: { startIndex: 1, endIndex: Math.max(1, endIndex - 1) },
@@ -2608,12 +2353,11 @@ Attached is the standalone HTML artifact. Open it in a browser to view it.`,
           await googleJson(`https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`, {
             method: 'POST',
             body: JSON.stringify({
-              requests: [
+              requests:[
                 {
                   insertText: {
                     endOfSegmentLocation: {},
-                    text: `
-${args.content}`,
+                    text: `\n${args.content}`,
                   },
                 },
               ],
@@ -2643,7 +2387,7 @@ ${args.content}`,
           `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`
         );
 
-        return { toolName, executedAt, status: 'completed', spreadsheetId, range, values: result.values || [] };
+        return { toolName, executedAt, status: 'completed', spreadsheetId, range, values: result.values ||[] };
       }
 
       case 'sheets_update': {
@@ -2652,7 +2396,7 @@ ${args.content}`,
           {
             method: 'PUT',
             body: JSON.stringify({
-              values: Array.isArray(args.values) ? args.values : args.values?.values || [],
+              values: Array.isArray(args.values) ? args.values : args.values?.values ||[],
             }),
           }
         );
@@ -2672,7 +2416,7 @@ ${args.content}`,
       case 'tasks_list': {
         const listId = args.listId || '@default';
         const result = await googleJson(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(listId)}/tasks`);
-        return { toolName, executedAt, status: 'completed', tasks: result.items || [] };
+        return { toolName, executedAt, status: 'completed', tasks: result.items ||[] };
       }
 
       case 'tasks_create': {
@@ -2693,7 +2437,7 @@ ${args.content}`,
           `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(args.query)}&readMask=names,emailAddresses,phoneNumbers,organizations`
         );
 
-        return { toolName, executedAt, status: 'completed', contacts: result.results || [] };
+        return { toolName, executedAt, status: 'completed', contacts: result.results ||[] };
       }
 
       case 'meet_schedule': {
@@ -2733,7 +2477,7 @@ ${args.content}`,
           `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${limit}&q=${encodeURIComponent(args.query)}`
         );
 
-        return { toolName, executedAt, status: 'completed', videos: result.items || [] };
+        return { toolName, executedAt, status: 'completed', videos: result.items ||[] };
       }
 
       case 'forms_create': {
@@ -2765,7 +2509,7 @@ ${args.content}`,
           {
             method: 'POST',
             body: JSON.stringify({
-              dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+              dateRanges:[{ startDate: '30daysAgo', endDate: 'today' }],
               metrics,
               dimensions,
             }),
@@ -2853,488 +2597,307 @@ ${args.content}`,
     }
   };
 
-  const stopVideoStream = (sendNotice = false) => {
-    if (videoIntervalRef.current) {
-      clearInterval(videoIntervalRef.current);
-      videoIntervalRef.current = null;
-    }
-
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-
-    videoEnabledRef.current = false;
-    videoStartingRef.current = false;
-    setIsVideoEnabled(false);
-
-    if (sendNotice && sessionRef.current) {
-      setTimeout(() => {
-        sendTextToLive(`${settings.userName} closed the camera. Acknowledge it normally and keep the conversation going.`);
-      }, 150);
-    }
-  };
-
-  const startSession = async (options: { sendGreeting?: boolean } = {}): Promise<boolean> => {
-    const { sendGreeting = true } = options;
-
-    if (startPromiseRef.current) {
-      return startPromiseRef.current;
-    }
-
-    if (sessionRef.current && isActiveRef.current && !isClosingRef.current) {
-      return true;
-    }
-
-    const startPromise = (async () => {
-      if (!aiRef.current) {
-        alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
-        return false;
-      }
-
-      const sessionGeneration = sessionGenerationRef.current + 1;
-      sessionGenerationRef.current = sessionGeneration;
-      isClosingRef.current = false;
-
-      setConnecting(true);
-      modelTranscriptBufferRef.current = '';
-      userTranscriptBufferRef.current = '';
-      lastSavedModelTranscriptRef.current = '';
-      lastSavedUserTranscriptRef.current = '';
-
-      try {
-        try { audioRecorderRef.current?.stop(); } catch (e) {}
-        try { audioStreamerRef.current?.stop(); } catch (e) {}
-        try { sessionRef.current?.close(); } catch (e) {}
-
-        audioRecorderRef.current = null;
-        sessionRef.current = null;
-
-        const streamer = audioStreamerRef.current || new AudioStreamer();
-        audioStreamerRef.current = streamer;
-        await streamer.init(24000);
-
-        const hasGoogleServiceAccess = Boolean(localStorage.getItem('googleAccessToken'));
-
-        const systemInstruction = [
-          BASE_LIVE_AGENT_PROMPT,
-          BIBLE_PERSONALITY || '',
-          historyContext,
-          `Product brand: VEP, which means Virtual Employee Persona. Default persona: Beatrice, Boss Jo Lernout's secretary.`,
-          `User preferred name: ${settings.userName}.`,
-          `Agent visible name: ${settings.agentName}.`,
-          hasGoogleServiceAccess
-            ? `Authentication mode: Google account connected. Google services such as Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics may be available through tools when the user asks.`
-            : `Authentication mode: email-only or Google services not connected. The voice assistant, chat history, profile, camera, file notes, and local app features are available, but Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics are not available unless the user signs in with Google. If asked for those services, explain this normally and briefly.`,
-          `Relationship frame: ${settings.agentName} is working with ${settings.userName} as a private secretary and trusted office aide. If the user is Jo Lernout, ${settings.agentName} may respectfully call him "Meneer Jo" when it fits the moment. Start in English unless the user starts in another language. Dutch Flemish is available in a normal local office style, and the persona can switch to almost any language when needed.`,
-          `Agent personality overlay from settings page. This is customizable and must sit on top of the constant base prompt without replacing it: ${settings.personality}.`,
-          `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
-          `When asked to create, build, render, showcase, prototype, code, animate, make slides, make forms, make dashboards, make pages, make Three.js demos, or make printable documents, call render_web_artifact with a complete standalone HTML/CSS/JS file. Never just describe the code if the user wants it rendered or built.`,
-          `For HTML/CSS/JS artifacts, include all CSS in <style> and all JS in <script>. Make it directly openable. For slides, include navigation controls and keyboard support. For documents, include print CSS and a print button. For Three.js, load Three.js from a CDN and keep everything in one HTML file.`,
-          `Never pretend to see, hear, inspect, send, email, open, or verify anything. Do not give mock answers. For camera and uploaded video, answer only from actual video frames that were sent into the live session. For uploaded images, audio, text, and files, answer only after the actual inline data, audio chunks, video snapshots, or extracted text was supplied. If the runtime cannot parse a file type, say exactly what could not be parsed and do not invent content.`,
-        ].filter(Boolean).join('
-
-');
-
-        const session = await aiRef.current.live.connect({
-          model: LIVE_MODEL,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: settings.selectedVoice || 'Charon',
-                },
-              },
-            },
-            systemInstruction,
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            tools: [{
-              functionDeclarations: GOOGLE_SERVICE_TOOLS,
-            }],
-          },
-          callbacks: {
-            onopen: () => {
-              if (sessionGenerationRef.current !== sessionGeneration) return;
-              console.log('Live session opened.');
-            },
-
-            onmessage: async (msg: LiveServerMessage) => {
-              if (sessionGenerationRef.current !== sessionGeneration) return;
-
-              if (msg.toolCall) {
-                const calls = msg.toolCall.functionCalls;
-
-                if (calls) {
-                  const resps = [];
-
-                  for (const c of calls) {
-                    if (sessionGenerationRef.current !== sessionGeneration) return;
-
-                    const toolName = c.name || 'unknown_tool';
-                    const args = c.args as any;
-                    const tid = Math.random().toString(36).substring(7);
-                    const action = safeJsonStringify(args || {});
-
-                    setTasks(p => [...p, {
-                      id: tid,
-                      serviceName: toolName,
-                      action,
-                      status: 'processing',
-                    }]);
-
-                    try {
-                      const result = await executeGoogleTool(toolName, args);
-
-                      const download = result.downloadData && result.downloadFilename
-                        ? {
-                            downloadData: result.downloadData,
-                            downloadFilename: result.downloadFilename,
-                            htmlPreviewData: result.htmlPreviewData,
-                            htmlPreviewFilename: result.htmlPreviewFilename,
-                          }
-                        : makeDownloadFile(result, toolName);
-
-                      setTasks(p => p.map(t => t.id === tid ? {
-                        ...t,
-                        status: 'completed',
-                        result: result.note || `Completed: ${toolName}`,
-                        ...download,
-                      } : t));
-
-                      saveMessage(
-                        'model',
-                        result.note || `Tool result from ${toolName}: completed.`,
-                        {
-                          toolName,
-                          toolResult: result,
-                          ...download,
-                        }
-                      );
-
-                      setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 16000);
-
-                      resps.push({
-                        id: c.id,
-                        name: toolName,
-                        response: {
-                          result,
-                          downloadFilename: download.downloadFilename,
-                        },
-                      });
-                    } catch (err: any) {
-                      const result = {
-                        toolName,
-                        args,
-                        status: 'failed',
-                        error: String(err?.message || err),
-                        executedAt: new Date().toISOString(),
-                      };
-
-                      const download = makeDownloadFile(result, `${toolName}-error`);
-
-                      setTasks(p => p.map(t => t.id === tid ? {
-                        ...t,
-                        status: 'failed',
-                        result: result.error,
-                        ...download,
-                      } : t));
-
-                      saveMessage(
-                        'model',
-                        `Tool failed from ${toolName}: ${result.error}`,
-                        {
-                          toolName,
-                          toolResult: result,
-                          ...download,
-                        }
-                      );
-
-                      resps.push({
-                        id: c.id,
-                        name: toolName,
-                        response: result,
-                      });
-                    }
-                  }
-
-                  if (
-                    resps.length > 0 &&
-                    sessionGenerationRef.current === sessionGeneration &&
-                    sessionRef.current &&
-                    typeof sessionRef.current.sendToolResponse === 'function'
-                  ) {
-                    sessionRef.current.sendToolResponse({ functionResponses: resps });
-                  }
-                }
-              }
-
-              if (msg.serverContent) {
-                const serverContent: any = msg.serverContent;
-
-                if (serverContent.interrupted) {
-                  audioStreamerRef.current?.stop();
-                  setIsAgentSpeaking(false);
-                  modelTranscriptBufferRef.current = '';
-                  return;
-                }
-
-                if (serverContent.inputTranscription?.text) {
-                  const inputText = serverContent.inputTranscription.text;
-                  userTranscriptBufferRef.current = inputText.trim();
-                  updateLiveTranscript('user', userTranscriptBufferRef.current, 3200);
-                }
-
-                if (serverContent.outputTranscription?.text) {
-                  const outputText = serverContent.outputTranscription.text;
-                  modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + outputText).trim();
-                  updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
-                }
-
-                const parts = serverContent.modelTurn?.parts;
-
-                if (parts) {
-                  for (const part of parts) {
-                    if (sessionGenerationRef.current !== sessionGeneration) return;
-
-                    if (part.inlineData?.data) {
-                      audioStreamerRef.current?.addPCM16(part.inlineData.data);
-                      setIsAgentSpeaking(true);
-
-                      setTimeout(() => {
-                        if (sessionGenerationRef.current === sessionGeneration) {
-                          setIsAgentSpeaking(false);
-                        }
-                      }, 620);
-                    }
-
-                    if (part.text?.trim()) {
-                      modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + ' ' + part.text).trim();
-                      updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
-                    }
-                  }
-                }
-
-                if (serverContent.turnComplete) {
-                  saveModelBuffer();
-                  saveUserBuffer();
-                }
-              }
-            },
-
-            onclose: () => {
-              if (sessionGenerationRef.current !== sessionGeneration) return;
-
-              sessionRef.current = null;
-              audioRecorderRef.current = null;
-              isClosingRef.current = false;
-
-              stopMicVisualizer();
-              stopVideoStream(false);
-
-              isActiveRef.current = false;
-              setIsActive(false);
-              setConnecting(false);
-              setIsAgentSpeaking(false);
-              setCurrentTranscript(null);
-            },
-
-            onerror: (err: any) => {
-              if (sessionGenerationRef.current !== sessionGeneration) return;
-
-              console.error('Live API Error:', err);
-              stopSession();
-            },
-          },
-        });
-
-        if (sessionGenerationRef.current !== sessionGeneration) {
-          try { session?.close(); } catch (e) {}
-          return false;
-        }
-
-        sessionRef.current = session;
-        isClosingRef.current = false;
-
-        const recorder = new AudioRecorder((base64) => {
-          if (sessionGenerationRef.current !== sessionGeneration) return;
-          if (isMutedRef.current) return;
-          sendAudioToLive(base64);
-        });
-
-        audioRecorderRef.current = recorder;
-        await recorder.start();
-
-        if (sessionGenerationRef.current !== sessionGeneration) {
-          try { recorder.stop(); } catch (e) {}
-          try { session?.close(); } catch (e) {}
-          return false;
-        }
-
-        setIsActive(true);
-        isActiveRef.current = true;
-        setConnecting(false);
-        startMicVisualizer();
-
-        if (sendGreeting) {
-          setTimeout(() => {
-            if (sessionGenerationRef.current !== sessionGeneration) return;
-
-            sendTextToLive(
-              `${settings.userName} is here in the office. Start like ${settings.agentName} is already sitting at the desk nearby as the office employee. If previous conversation context is available, you may briefly mention one relevant thing remembered from it. Begin in English, normally and respectfully, like: "Yes, boss. I'm listening." or "Yes, I'm here, Meneer Jo. I'm listening." Do not ask how you can help.`
-            );
-          }, 500);
-        }
-
-        return true;
-      } catch (err) {
-        console.error('Session start failed:', err);
-
-        if (sessionGenerationRef.current === sessionGeneration) {
-          stopSession();
-        }
-
-        return false;
-      }
-    })();
-
-    startPromiseRef.current = startPromise;
-
-    try {
-      return await startPromise;
-    } finally {
-      if (startPromiseRef.current === startPromise) {
-        startPromiseRef.current = null;
-      }
-    }
-  };
-
-  const stopSession = () => {
-    isClosingRef.current = true;
-    sessionGenerationRef.current += 1;
-    isActiveRef.current = false;
-
-    const recorder = audioRecorderRef.current;
-    const streamer = audioStreamerRef.current;
-    const session = sessionRef.current;
-
-    try { recorder?.stop(); } catch (e) {}
-    try { streamer?.stop(); } catch (e) {}
-    try { session?.close(); } catch (e) {}
-
-    audioRecorderRef.current = null;
-    sessionRef.current = null;
-    isClosingRef.current = false;
-
-    stopMicVisualizer();
-    stopVideoStream(false);
-
-    modelTranscriptBufferRef.current = '';
-    userTranscriptBufferRef.current = '';
-
-    if (transcriptTimeoutRef.current) {
-      clearTimeout(transcriptTimeoutRef.current);
-      transcriptTimeoutRef.current = null;
-    }
-
-    setIsActive(false);
-    setConnecting(false);
-    setIsAgentSpeaking(false);
-    setCurrentTranscript(null);
-  };
-
-  const toggleVideo = async () => {
-    if (videoStartingRef.current) return;
-
-    if (videoEnabledRef.current || isVideoEnabled) {
-      stopVideoStream(true);
+  const startSession = async () => {
+    if (!aiRef.current) {
+      alert('Gemini API key is missing. Make sure VITE_GEMINI_API_KEY is added in Vercel, then redeploy.');
       return;
     }
 
-    videoStartingRef.current = true;
+    setConnecting(true);
+    modelTranscriptBufferRef.current = '';
+    userTranscriptBufferRef.current = '';
 
     try {
-      const liveReady = sessionRef.current && isActiveRef.current
-        ? true
-        : await startSession({ sendGreeting: false });
-
-      if (!liveReady) {
-        videoStartingRef.current = false;
-        return;
+      if (audioStreamerRef.current) {
+        await audioStreamerRef.current.init(24000);
       }
 
-      stopVideoStream(false);
+      const hasGoogleServiceAccess = Boolean(localStorage.getItem('googleAccessToken'));
+      
+      const systemInstruction =[
+        `=== CORE NON-NEGOTIABLE SYSTEM DIRECTIVES ===`,
+        BASE_LIVE_AGENT_PROMPT,
+        BIBLE_PERSONALITY || '',
+        `=============================================`,
+        historyContext,
+        `Product brand: VEP, which means Virtual Employee Persona. Default persona: Beatrice, Boss Jo Lernout's secretary.`,
+        `User preferred name: ${settings.userName}.`,
+        `Agent visible name: ${settings.agentName}.`,
+        hasGoogleServiceAccess
+          ? `Authentication mode: Google account connected. Google services such as Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics may be available through tools when the user asks. If a tool throws a permission error, kindly remind the user to tick ALL checkboxes when signing in with Google.`
+          : `Authentication mode: email-only or Google services not connected. The voice assistant, chat history, profile, camera, file notes, and local app features are available, but Gmail, Drive, Calendar, Docs, Sheets, Slides, Tasks, Contacts, Forms, YouTube, and Analytics are not available unless the user signs in with Google. If asked for those services, explain this normally and briefly.`,
+        `Relationship frame: ${settings.agentName} is working with ${settings.userName} as a private secretary and trusted office aide. If the user is Jo Lernout, ${settings.agentName} may respectfully call him "Meneer Jo" when it fits the moment. Start in English unless the user starts in another language. Dutch Flemish is available in a normal local office style, and the persona can switch to almost any language when needed.`,
+        `=== CUSTOM AGENT PERSONALITY OVERLAY ===`,
+        `The following custom personality must be applied while STRICTLY adhering to the core directives above:`,
+        settings.personality,
+        `========================================`,
+        `Selected visible voice alias: ${selectedVoiceMeta.alias}. Internal voice id: ${selectedVoiceMeta.id}. Voice vibe: ${selectedVoiceMeta.vibe}. Do not mention the internal voice id unless asked by the developer.`,
+        `When asked to create, build, render, showcase, prototype, code, animate, make slides, make forms, make dashboards, make pages, make Three.js demos, or make printable documents, call render_web_artifact with a complete standalone HTML/CSS/JS file. Never just describe the code if the user wants it rendered or built.`,
+        `For HTML/CSS/JS artifacts, include all CSS in <style> and all JS in <script>. Make it directly openable. For slides, include navigation controls and keyboard support. For documents, include print CSS and a print button. For Three.js, load Three.js from a CDN and keep everything in one HTML file.`,
+      ].filter(Boolean).join('\n\n');
 
-      const activeVideoSessionGeneration = sessionGenerationRef.current;
+      const session = await aiRef.current.live.connect({
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: settings.selectedVoice || 'Charon',
+              },
+            },
+          },
+          systemInstruction,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          tools:[
+            { functionDeclarations: GOOGLE_SERVICE_TOOLS },
+            { googleSearch: {} }
+          ],
+        },
+        callbacks: {
+          onopen: () => {
+            console.log('Live session opened.');
+          },
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode,
-          width: 1280,
-          height: 720,
+          onmessage: async (msg: LiveServerMessage) => {
+            if (msg.toolCall) {
+              const calls = msg.toolCall.functionCalls;
+
+              if (calls) {
+                const resps =[];
+
+                for (const c of calls) {
+                  const toolName = c.name || 'unknown_tool';
+                  const args = c.args as any;
+                  const tid = Math.random().toString(36).substring(7);
+                  const action = safeJsonStringify(args || {});
+
+                  setTasks(p =>[...p, {
+                    id: tid,
+                    serviceName: toolName,
+                    action,
+                    status: 'processing',
+                  }]);
+
+                  try {
+                    const result = await executeGoogleTool(toolName, args);
+
+                    const download = result.downloadData && result.downloadFilename
+                      ? {
+                          downloadData: result.downloadData,
+                          downloadFilename: result.downloadFilename,
+                          htmlPreviewData: result.htmlPreviewData,
+                          htmlPreviewFilename: result.htmlPreviewFilename,
+                        }
+                      : makeDownloadFile(result, toolName);
+
+                    setTasks(p => p.map(t => t.id === tid ? {
+                      ...t,
+                      status: 'completed',
+                      result: result.note || `Completed: ${toolName}`,
+                      ...download,
+                    } : t));
+
+                    saveMessage(
+                      'model',
+                      result.note || `Tool result from ${toolName}: completed.`,
+                      {
+                        toolName,
+                        toolResult: result,
+                        ...download,
+                      }
+                    );
+
+                    setTimeout(() => setTasks(p => p.filter(t => t.id !== tid)), 16000);
+
+                    resps.push({
+                      id: c.id,
+                      name: toolName,
+                      response: {
+                        result,
+                        downloadFilename: download.downloadFilename,
+                      },
+                    });
+                  } catch (err: any) {
+                    const result = {
+                      toolName,
+                      args,
+                      status: 'failed',
+                      error: String(err?.message || err),
+                      executedAt: new Date().toISOString(),
+                    };
+                    const download = makeDownloadFile(result, `${toolName}-error`);
+
+                    setTasks(p => p.map(t => t.id === tid ? {
+                      ...t,
+                      status: 'failed',
+                      result: result.error,
+                      ...download,
+                    } : t));
+
+                    saveMessage(
+                      'model',
+                      `Tool failed from ${toolName}: ${result.error}`,
+                      {
+                        toolName,
+                        toolResult: result,
+                        ...download,
+                      }
+                    );
+
+                    resps.push({
+                      id: c.id,
+                      name: toolName,
+                      response: result,
+                    });
+                  }
+                }
+
+                if (resps.length > 0 && sessionRef.current && typeof sessionRef.current.sendToolResponse === 'function') {
+                  sessionRef.current.sendToolResponse({ functionResponses: resps });
+                }
+              }
+            }
+
+            if (msg.serverContent) {
+              const serverContent: any = msg.serverContent;
+
+              if (serverContent.interrupted) {
+                audioStreamerRef.current?.stop();
+                setIsAgentSpeaking(false);
+                modelTranscriptBufferRef.current = '';
+                return;
+              }
+
+              if (serverContent.inputTranscription?.text) {
+                const inputText = serverContent.inputTranscription.text;
+                userTranscriptBufferRef.current = inputText.trim();
+                updateLiveTranscript('user', userTranscriptBufferRef.current, 3200);
+              }
+
+              if (serverContent.outputTranscription?.text) {
+                const outputText = serverContent.outputTranscription.text;
+                modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + outputText).trim();
+                updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
+              }
+
+              const parts = serverContent.modelTurn?.parts;
+
+              if (parts) {
+                for (const part of parts) {
+                  if (part.inlineData?.data) {
+                    audioStreamerRef.current?.addPCM16(part.inlineData.data);
+                    setIsAgentSpeaking(true);
+                    setTimeout(() => setIsAgentSpeaking(false), 620);
+                  }
+
+                  if (part.text?.trim()) {
+                    modelTranscriptBufferRef.current = (modelTranscriptBufferRef.current + ' ' + part.text).trim();
+                    updateLiveTranscript('model', modelTranscriptBufferRef.current, 3900);
+                  }
+                }
+              }
+
+              if (serverContent.turnComplete) {
+                saveModelBuffer();
+                saveUserBuffer();
+              }
+            }
+          },
+
+          onclose: () => stopSession(),
+
+          onerror: (err: any) => {
+            console.error('Live API Error:', err);
+            stopSession();
+          },
         },
       });
 
-      if (sessionGenerationRef.current !== activeVideoSessionGeneration) {
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
+      sessionRef.current = session;
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      audioRecorderRef.current = new AudioRecorder((base64) => {
+        if (isMutedRef.current) return;
+        sendAudioToLive(base64);
+      });
 
-      videoEnabledRef.current = true;
-      setIsVideoEnabled(true);
+      await audioRecorderRef.current.start();
 
-      const sendCurrentCameraFrame = () => {
-        if (sessionGenerationRef.current !== activeVideoSessionGeneration) return false;
-        if (!videoRef.current || !canvasRef.current || !sessionRef.current) return false;
-
-        const v = videoRef.current;
-        const c = canvasRef.current;
-        const ctx = c.getContext('2d');
-
-        if (!ctx || v.videoWidth <= 0 || v.videoHeight <= 0) return false;
-
-        c.width = v.videoWidth;
-        c.height = v.videoHeight;
-        ctx.drawImage(v, 0, 0, c.width, c.height);
-
-        const base64Url = c.toDataURL('image/jpeg', 0.58);
-        const base64Data = base64Url.split(',')[1];
-
-        if (!base64Data) return false;
-        sendVideoToLive(base64Data, 'image/jpeg');
-        return true;
-      };
+      setIsActive(true);
+      isActiveRef.current = true;
+      setConnecting(false);
+      startMicVisualizer();
 
       setTimeout(() => {
-        if (sendCurrentCameraFrame()) {
-          sendTextToLive(
-            `${settings.userName} opened the camera. A real camera frame has already been sent. Describe only what is visible in the real frame. If the frame is unclear, say it is unclear. Do not make anything up.`
-          );
-        }
-      }, 650);
+        sendTextToLive(
+          `${settings.userName} is here in the office. Start like ${settings.agentName} is already sitting at the desk nearby as the office employee. If previous conversation context is available, you may briefly mention one relevant thing remembered from it. Begin in English, normally and respectfully, like: "Yes, boss. I'm listening." or "Yes, I'm here, Meneer Jo. I'm listening." Do not ask how you can help.`
+        );
+      }, 500);
+    } catch (err) {
+      console.error('Session start failed:', err);
+      setConnecting(false);
+      stopSession();
+    }
+  };
 
-      if (videoIntervalRef.current) {
-        clearInterval(videoIntervalRef.current);
-        videoIntervalRef.current = null;
+  const toggleVideo = async () => {
+    if (!isVideoEnabled) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode, width: 1280, height: 720 },
+          audio: false 
+        });
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        setIsVideoEnabled(true);
+
+        setTimeout(() => {
+          sendTextToLive(
+            `${settings.userName} just opened the camera. Notice it in a normal human way, like you looked up and saw the view. Do not say you can assist. Say something like: Oh, yeah, I see it now. Then briefly describe only what is actually visible. If the visual input is unclear, say that.`
+          );
+        }, 300);
+
+        videoIntervalRef.current = setInterval(() => {
+          if (!videoRef.current || !canvasRef.current || !sessionRef.current) return;
+
+          const v = videoRef.current;
+          const c = canvasRef.current;
+          const ctx = c.getContext('2d');
+
+          if (ctx && v.videoWidth > 0) {
+            c.width = v.videoWidth;
+            c.height = v.videoHeight;
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+
+            const base64Url = c.toDataURL('image/jpeg', 0.55);
+            const base64Data = base64Url.split(',')[1];
+
+            if (base64Data) {
+              sendVideoToLive(base64Data);
+            }
+          }
+        }, 900);
+      } catch (e) {
+        console.error('Camera error:', e);
+      }
+    } else {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((t) => t.stop());
+        videoRef.current.srcObject = null;
       }
 
-      videoIntervalRef.current = setInterval(() => {
-        if (!videoEnabledRef.current) return;
-        sendCurrentCameraFrame();
-      }, VIDEO_STREAM_SNAPSHOT_INTERVAL_MS);
-    } catch (e) {
-      console.error('Camera error:', e);
-      stopVideoStream(false);
-    } finally {
-      videoStartingRef.current = false;
+      if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+      setIsVideoEnabled(false);
+
+      setTimeout(() => {
+        sendTextToLive(`${settings.userName} closed the camera. Acknowledge it normally and keep the conversation going.`);
+      }, 150);
     }
   };
 
@@ -3353,15 +2916,11 @@ ${args.content}`,
         const base64Data = base64Url.split(',')[1];
 
         if (base64Data) {
-          const text = `${settings.userName} captured this photo. Look at it and respond normally, briefly, and clearly.`;
-          sendTextToLive(text);
+          sendTextToLive(`${settings.userName} captured this photo. Look at it and respond normally, briefly, and clearly.`);
           sendVideoToLive(base64Data);
-          saveMessage('user', '[Captured photo]', {
-            fileName: `camera-photo-${Date.now()}.jpg`,
+          saveMessage('user', '[Sent Photo]', {
             fileType: 'image/jpeg',
-            fileKind: 'image',
-            filePreviewData: base64Url,
-            fileDownloadData: base64Url,
+            previewData: base64Url,
           });
         }
       }
@@ -3369,189 +2928,309 @@ ${args.content}`,
   };
 
   const switchCamera = async () => {
-    if (!videoEnabledRef.current) return;
-
     const newMode = facingMode === 'user' ? 'environment' : 'user';
     setFacingMode(newMode);
 
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: newMode,
-          width: 1280,
-          height: 720,
-        },
-      });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+    if (isVideoEnabled) {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((t) => t.stop());
       }
 
-      sendTextToLive(`${settings.userName} switched the camera. Notice the new view normally and describe only what stands out.`);
-    } catch (e) {
-      console.error('Camera switch error:', e);
-      stopVideoStream(false);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: newMode, width: 1280, height: 720 },
+          audio: false
+        });
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.error('Video play err', e));
+        }
+
+        sendTextToLive(`${settings.userName} switched the camera. Notice the new view normally and describe only what stands out.`);
+      } catch (e) {
+        console.error('Camera switch error:', e);
+      }
     }
   };
 
   const handleAttachFile = async (file: File) => {
     const safeName = file.name || 'attached file';
-    const fileType = file.type || 'application/octet-stream';
-    const fileKind = getFileKind(file);
-    const canStorePreview = file.size <= MAX_STORED_FILE_PREVIEW_BYTES;
-    const filePreviewData = canStorePreview ? await fileToDataUrl(file).catch(() => '') : '';
-    const fileDownloadData = filePreviewData || '';
-    const base64Data = await fileToBase64(file).catch(() => '');
-    const readableKind = fileKind || 'file';
-    const localFile: LocalStoredFile | null = fileDownloadData
-      ? {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          name: safeName,
-          type: fileType,
-          size: file.size,
-          kind: fileKind,
-          dataUrl: fileDownloadData,
-          createdAt: Date.now(),
+    const fileType = file.type || 'unknown';
+
+    if (fileType === 'application/pdf') {
+      saveMessage('user', `[Attached PDF: ${safeName}]`, {
+        fileName: safeName,
+        fileType,
+      });
+      updateLiveTranscript('user', `Attached PDF: ${safeName} (Uploading for processing...)`, 3000);
+
+      if (sessionRef.current) {
+        try {
+          const token = localStorage.getItem('googleAccessToken');
+          if (!token) {
+            sendTextToLive(`${settings.userName} attached a PDF, but they are not signed into Google. Tell them to sign in via Profile so you can read PDFs.`);
+            return;
+          }
+
+          const metadata = { name: safeName, mimeType: 'application/vnd.google-apps.document' };
+          const boundary = `boundary_${Date.now()}`;
+          
+          const metaBlob = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`], { type: 'text/plain' });
+          const endBlob = new Blob([`\r\n--${boundary}--`], { type: 'text/plain' });
+          const fullBlob = new Blob([metaBlob, file, endBlob], { type: `multipart/related; boundary=${boundary}` });
+          
+          const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: { 
+              Authorization: `Bearer ${token}` 
+            },
+            body: fullBlob
+          });
+          
+          if (!res.ok) throw new Error('Drive upload failed');
+          const driveFile = await res.json();
+          
+          const exportRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}/export?mimeType=text/plain`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (!exportRes.ok) throw new Error('Drive export failed');
+          const textContent = await exportRes.text();
+          
+          fetch(`https://www.googleapis.com/drive/v3/files/${driveFile.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          }).catch(console.error);
+
+          const maxLen = 30000;
+          if (textContent.length > maxLen) {
+            sendTextToLive(`${settings.userName} uploaded a large PDF named ${safeName}. Sending in chunks.`);
+            for (let i = 0; i < textContent.length; i += maxLen) {
+              const chunk = textContent.slice(i, i + maxLen);
+              sendTextToLive(`PDF File: ${safeName} (Part ${Math.floor(i / maxLen) + 1}):\n\n${chunk}`);
+            }
+            sendTextToLive(`Finished sending PDF: ${safeName}.`);
+          } else {
+            sendTextToLive(`${settings.userName} uploaded a PDF named ${safeName}. Content follows:\n\n${textContent}`);
+          }
+        } catch (e) {
+          console.error('PDF error', e);
+          sendTextToLive(`${settings.userName} tried to upload a PDF named ${safeName}, but text extraction failed. Please tell them to copy-paste the text instead.`);
         }
-      : null;
-
-    if (localFile) {
-      try {
-        await saveLocalFile(localFile);
-        setLocalFiles(previous => [localFile, ...previous.filter(item => item.id !== localFile.id)]);
-      } catch (error) {
-        console.error('Local file save failed:', error);
       }
-    }
-
-    const messageText = `[Attached ${readableKind}: ${safeName}]`;
-
-    saveMessage('user', messageText, {
-      fileName: safeName,
-      fileType,
-      fileSize: file.size,
-      fileKind,
-      filePreviewData: filePreviewData || undefined,
-      fileDownloadData: fileDownloadData || undefined,
-    });
-
-    updateLiveTranscript('user', `Attached ${readableKind}: ${safeName}`, 3000);
-
-    const liveReady = sessionRef.current && isActiveRef.current
-      ? true
-      : await startSession({ sendGreeting: false });
-
-    if (!liveReady || !sessionRef.current) {
-      saveMessage('model', `${settings.agentName} could not inspect "${safeName}" because the live session is not connected.`);
       return;
     }
 
-    try {
-      if (fileKind === 'text') {
-        const textPreview = await readTextFile(file, 40000);
-        sendTextToLive(
-          `${settings.userName} uploaded this text file: "${safeName}". The real extracted text follows. Answer only from this text.
-
-${textPreview}`
-        );
-        return;
-      }
-
-      if (fileKind === 'image') {
-        if (!base64Data) {
-          saveMessage('model', `${settings.agentName} could not inspect "${safeName}" because no image data could be read.`);
-          return;
-        }
-
-        sendVideoToLive(base64Data, fileType || 'image/jpeg');
-        sendTextToLive(
-          `${settings.userName} uploaded the image "${safeName}". The real image data has already been sent. Describe only what is visible in that uploaded image. If it is unclear, say it is unclear. Do not make anything up.`
-        );
-        return;
-      }
-
-      if (fileKind === 'audio') {
-        sendTextToLive(`The uploaded audio file "${safeName}" will now be sent as real audio chunks. Do not answer until the chunks are complete.`);
-
-        const chunks = await decodeAudioFileToPcm16Chunks(file, 0.5);
-
-        if (!chunks.length) {
-          saveMessage('model', `${settings.agentName} could not inspect "${safeName}" because the browser could not decode the audio.`);
-          return;
-        }
-
-        for (const chunk of chunks.slice(0, 240)) {
-          if (!sessionRef.current || !isActiveRef.current) break;
-          sendAudioToLive(chunk);
-          await delay(35);
-        }
-
-        sendTextToLive(
-          `That was the complete real audio data supplied from "${safeName}". Respond only from what you actually heard in those audio chunks. If speech or sound is unclear, say it is unclear.`
-        );
-        return;
-      }
-
-      if (fileKind === 'video') {
-        sendTextToLive(`The uploaded video file "${safeName}" will now be sampled into real hidden snapshots. Do not answer until the snapshots are complete.`);
-
-        const frames = await sampleVideoFrames(file, 20);
-
-        if (!frames.length) {
-          saveMessage('model', `${settings.agentName} could not inspect "${safeName}" because the browser could not extract video snapshots.`);
-          return;
-        }
-
-        for (const frame of frames) {
-          if (!sessionRef.current || !isActiveRef.current) break;
-          sendVideoToLive(frame, 'image/jpeg');
-          await delay(120);
-        }
-
-        sendTextToLive(
-          `Those were ${frames.length} real hidden snapshots from the uploaded video "${safeName}". Summarize only what is visible in those snapshots. If motion, text, people, objects, or events are unclear, say they are unclear. Do not make anything up.`
-        );
-        return;
-      }
-
-      if (fileKind === 'document') {
-        if (base64Data) {
-          const inlineSent = sendInlineFileToLive(
-            base64Data,
-            fileType,
-            `${settings.userName} uploaded the document "${safeName}". This is the real inline file data. Inspect it if this runtime supports the document type. If it does not, state that browser-side document extraction is required and do not invent the contents.`
-          );
-
-          if (inlineSent) return;
-        }
-
-        saveMessage('model', `${settings.agentName} saved "${safeName}" locally for preview/download, but this browser runtime needs document text extraction before I can truthfully inspect its contents.`);
-        return;
-      }
-
-      if (base64Data) {
-        const inlineSent = sendInlineFileToLive(
-          base64Data,
+    if (fileType.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Url = reader.result as string;
+        saveMessage('user', `[Attached image: ${safeName}]`, {
+          fileName: safeName,
           fileType,
-          `${settings.userName} uploaded "${safeName}". This is real inline file data. Inspect it only if this runtime supports the MIME type. If not, say that it cannot be parsed here.`
-        );
+          previewData: base64Url,
+        });
+        updateLiveTranscript('user', `Attached image: ${safeName}`, 3000);
 
-        if (inlineSent) return;
-      }
-
-      saveMessage('model', `${settings.agentName} saved "${safeName}" locally for preview/download, but this file type cannot be parsed truthfully in the current browser runtime.`);
-    } catch (error: any) {
-      console.error('File handling failed:', error);
-      saveMessage('model', `I had trouble reading "${safeName}": ${String(error?.message || error)}`);
+        if (sessionRef.current) {
+          sendTextToLive(`${settings.userName} uploaded an image: ${safeName}. Respond to it.`);
+          const base64Data = base64Url.split(',')[1];
+          sendVideoToLive(base64Data);
+        }
+      };
+      reader.readAsDataURL(file);
+      return;
     }
+
+    if (fileType.startsWith('video/')) {
+      updateLiveTranscript('user', `Attached video: ${safeName}`, 3000);
+
+      if (sessionRef.current) {
+        sendTextToLive(`${settings.userName} uploaded a video: ${safeName}. Processing frames...`);
+        const videoUrl = URL.createObjectURL(file);
+        const videoElement = document.createElement('video');
+        videoElement.src = videoUrl;
+        videoElement.muted = true;
+        videoElement.crossOrigin = 'anonymous';
+
+        videoElement.onloadeddata = () => {
+          const c = document.createElement('canvas');
+          const ctx = c.getContext('2d');
+          if (!ctx) return;
+
+          const scale = Math.min(1, 720 / Math.max(videoElement.videoWidth, videoElement.videoHeight));
+          c.width = videoElement.videoWidth * scale;
+          c.height = videoElement.videoHeight * scale;
+
+          const duration = videoElement.duration || 10;
+          let currentTime = 0;
+
+          const captureNext = () => {
+            videoElement.currentTime = currentTime;
+          };
+
+          videoElement.onseeked = () => {
+            if (!sessionRef.current) return;
+            ctx.drawImage(videoElement, 0, 0, c.width, c.height);
+            const base64Data = c.toDataURL('image/jpeg', 0.6);
+            const pureBase64 = base64Data.split(',')[1];
+
+            if (currentTime === 0) {
+              saveMessage('user', `[Attached video: ${safeName}]`, {
+                fileName: safeName,
+                fileType,
+                previewData: base64Data
+              });
+            }
+
+            sendVideoToLive(pureBase64);
+
+            currentTime += 1;
+            if (currentTime <= duration) {
+              setTimeout(captureNext, 200);
+            } else {
+              URL.revokeObjectURL(videoUrl);
+              sendTextToLive(`Finished sending video frames for ${safeName}.`);
+            }
+          };
+
+          captureNext();
+        };
+      } else {
+        saveMessage('user', `[Attached video: ${safeName}]`, { fileName: safeName, fileType });
+      }
+      return;
+    }
+
+    if (fileType.startsWith('audio/')) {
+      saveMessage('user', `[Attached audio: ${safeName}]`, {
+        fileName: safeName,
+        fileType,
+      });
+      updateLiveTranscript('user', `Attached audio: ${safeName}`, 3000);
+
+      if (sessionRef.current) {
+        sendTextToLive(`${settings.userName} uploaded an audio file: ${safeName}. Listen to it now.`);
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          const audioCtx = new AudioCtx({ sampleRate: 16000 });
+          const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+          const pcmData = audioBuffer.getChannelData(0);
+
+          const chunkSize = 16000;
+          let offset = 0;
+
+          const sendNextChunk = () => {
+            if (!sessionRef.current || offset >= pcmData.length) return;
+
+            const end = Math.min(offset + chunkSize, pcmData.length);
+            const chunk = pcmData.slice(offset, end);
+            const int16Buffer = new Int16Array(chunk.length);
+            
+            for (let i = 0; i < chunk.length; i++) {
+              let s = Math.max(-1, Math.min(1, chunk[i]));
+              int16Buffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            let binary = '';
+            const bytes = new Uint8Array(int16Buffer.buffer);
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+
+            sendAudioToLive(base64);
+
+            offset += chunkSize;
+            setTimeout(sendNextChunk, 50);
+          };
+
+          sendNextChunk();
+        } catch (e) {
+          console.error('Audio processing error:', e);
+          sendTextToLive(`Failed to process audio file: ${safeName}`);
+        }
+      }
+      return;
+    }
+
+    if (
+      fileType.startsWith('text/') ||
+      fileType === 'application/json' ||
+      fileType === 'application/javascript' ||
+      file.name.endsWith('.js') ||
+      file.name.endsWith('.ts') ||
+      file.name.endsWith('.tsx') ||
+      file.name.endsWith('.jsx') ||
+      file.name.endsWith('.html') ||
+      file.name.endsWith('.css') ||
+      file.name.endsWith('.md')
+    ) {
+      const textContent = await file.text();
+
+      saveMessage('user', `[Attached code/text file: ${safeName}]`, {
+        fileName: safeName,
+        fileType,
+      });
+      updateLiveTranscript('user', `Attached text file: ${safeName}`, 3000);
+
+      if (sessionRef.current) {
+        const maxLen = 30000;
+        if (textContent.length > maxLen) {
+          sendTextToLive(`${settings.userName} uploaded a large text file named ${safeName}. Sending in chunks.`);
+          for (let i = 0; i < textContent.length; i += maxLen) {
+            const chunk = textContent.slice(i, i + maxLen);
+            sendTextToLive(`File: ${safeName} (Part ${Math.floor(i / maxLen) + 1}):\n\n${chunk}`);
+          }
+          sendTextToLive(`Finished sending file: ${safeName}.`);
+        } else {
+          sendTextToLive(`${settings.userName} uploaded a text file named ${safeName}. Content follows:\n\n${textContent}`);
+        }
+      }
+      return;
+    }
+
+    saveMessage('user', `[Attached file: ${safeName}]`, {
+      fileName: safeName,
+      fileType,
+    });
+    updateLiveTranscript('user', `Attached file: ${safeName}`, 3000);
+    
+    if (sessionRef.current) {
+      sendTextToLive(
+        `${settings.userName} attached a file named "${safeName}" with type "${fileType}". Acknowledge it normally, but state you cannot parse binary files of this type in real-time unless it's text, image, audio, or video.`
+      );
+    }
+  };
+
+  const stopSession = () => {
+    try { audioRecorderRef.current?.stop(); } catch (e) {}
+    try { audioStreamerRef.current?.stop(); } catch (e) {}
+    try { sessionRef.current?.close(); } catch (e) {}
+
+    stopMicVisualizer();
+
+    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
+    }
+
+    sessionRef.current = null;
+    modelTranscriptBufferRef.current = '';
+    userTranscriptBufferRef.current = '';
+    isActiveRef.current = false;
+
+    setIsVideoEnabled(false);
+    setIsActive(false);
+    setConnecting(false);
+    setIsAgentSpeaking(false);
+    setCurrentTranscript(null);
   };
 
   const persistSettings = async () => {
@@ -3567,14 +3246,16 @@ ${textPreview}`
   };
 
   return (
-    <div className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-lime-300/30" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}>
+    <div
+      className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-[#020203] text-zinc-300 selection:bg-lime-300/30"
+      style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
+    >
       <canvas ref={canvasRef} className="hidden" />
 
       <input
         ref={fileInputRef}
         type="file"
         className="hidden"
-        accept="image/*,audio/*,video/*,.txt,.md,.json,.csv,.html,.css,.js,.jsx,.ts,.tsx,.py,.xml,.yaml,.yml,.log,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) handleAttachFile(file);
@@ -3584,8 +3265,18 @@ ${textPreview}`
 
       <AnimatePresence>
         {isVideoEnabled && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-40 bg-black">
-            <video ref={videoRef} playsInline muted className={`h-full w-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 bg-black"
+          >
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className={`h-full w-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+            />
 
             <div className="absolute left-6 top-6 flex items-center gap-2 rounded-full border border-lime-300/20 bg-black/60 px-3 py-1.5 backdrop-blur-md">
               <span className="h-2 w-2 animate-pulse rounded-full bg-lime-300 shadow-[0_0_8px_rgba(190,242,100,0.9)]" />
@@ -3593,23 +3284,41 @@ ${textPreview}`
             </div>
 
             <div className="pointer-events-auto absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-4">
-              <button onClick={switchCamera} className="rounded-full border border-white/10 bg-black/60 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-200 backdrop-blur-xl transition hover:border-lime-300/40 hover:text-lime-200">
+              <button
+                onClick={switchCamera}
+                className="rounded-full border border-white/10 bg-black/60 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-200 backdrop-blur-xl transition hover:border-lime-300/40 hover:text-lime-200"
+              >
                 Flip Camera
               </button>
 
-              <button onClick={capturePhoto} className="flex items-center gap-2 rounded-full border border-lime-300/30 bg-lime-300/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 backdrop-blur-xl transition hover:bg-lime-300/25">
+              <button
+                onClick={capturePhoto}
+                className="flex items-center gap-2 rounded-full border border-lime-300/30 bg-lime-300/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 backdrop-blur-xl transition hover:bg-lime-300/25"
+              >
                 <Camera className="h-4 w-4" /> Capture
               </button>
 
-              <button onClick={toggleVideo} className="rounded-full border border-red-500/30 bg-red-500/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-red-300 backdrop-blur-xl transition hover:bg-red-500/25">
+              <button
+                onClick={toggleVideo}
+                className="rounded-full border border-red-500/30 bg-red-500/15 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-red-300 backdrop-blur-xl transition hover:bg-red-500/25"
+              >
                 Close Camera
               </button>
             </div>
 
             <AnimatePresence>
               {currentTranscript && (
-                <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="pointer-events-none absolute left-1/2 top-[106px] z-50 w-[92vw] max-w-5xl -translate-x-1/2">
-                  <OneLineStreamingTranscript role={currentTranscript.role} text={currentTranscript.text} name={settings.agentName} />
+                <motion.div
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12 }}
+                  className="pointer-events-none absolute left-1/2 top-[106px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+                >
+                  <OneLineStreamingTranscript
+                    role={currentTranscript.role}
+                    text={currentTranscript.text}
+                    name={settings.agentName}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -3622,7 +3331,6 @@ ${textPreview}`
           <button onClick={() => setShowSidebar(true)} className="-ml-2 rounded-xl border border-white/10 p-2 text-zinc-400 transition-all hover:bg-white/5 hover:text-white">
             <Menu className="h-5 w-5" />
           </button>
-
           <div className="hidden items-center gap-3 sm:flex">
             <img src={EBURON_LOGO_URL} alt="Eburon" className="h-8 w-8 rounded-full object-cover" />
             <div className="leading-none">
@@ -3645,7 +3353,9 @@ ${textPreview}`
         <div className="flex items-center gap-6">
           <div className="mr-2 hidden flex-col items-end sm:flex">
             <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-600">Voice</span>
-            <span className="flex items-center gap-1.5 font-mono text-[10px] text-lime-300">{selectedVoiceMeta.alias}</span>
+            <span className="flex items-center gap-1.5 font-mono text-[10px] text-lime-300">
+              {selectedVoiceMeta.alias}
+            </span>
           </div>
 
           <button onClick={() => setShowProfile(true)} className="h-10 w-10 overflow-hidden rounded-full border border-white/10 transition-all hover:border-lime-300/50 focus:outline-none focus:ring-2 focus:ring-lime-300/50">
@@ -3667,12 +3377,26 @@ ${textPreview}`
             <div className="absolute left-0 right-0 top-1/2 h-px bg-gradient-to-r from-transparent via-lime-300/[0.04] to-transparent" />
           </div>
 
-          <LimeVoiceOrb isActive={isActive} isAgentSpeaking={isAgentSpeaking} speakerLevel={speakerLevel} speakerBands={speakerBands} />
+          <LimeVoiceOrb
+            isActive={isActive}
+            isAgentSpeaking={isAgentSpeaking}
+            speakerLevel={speakerLevel}
+            speakerBands={speakerBands}
+          />
 
           <AnimatePresence>
             {currentTranscript && (
-              <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="pointer-events-none absolute left-1/2 top-[340px] z-50 w-[92vw] max-w-5xl -translate-x-1/2">
-                <OneLineStreamingTranscript role={currentTranscript.role} text={currentTranscript.text} name={settings.agentName} />
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                className="absolute left-1/2 top-[340px] z-50 w-[92vw] max-w-5xl -translate-x-1/2"
+              >
+                <OneLineStreamingTranscript
+                  role={currentTranscript.role}
+                  text={currentTranscript.text}
+                  name={settings.agentName}
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -3681,7 +3405,14 @@ ${textPreview}`
             <div className="mb-4 w-full max-w-md space-y-2 px-6">
               <AnimatePresence>
                 {tasks.map(task => (
-                  <motion.div key={task.id} layout initial={{ opacity: 0, x: -50, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }} className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-lime-300/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl">
+                  <motion.div
+                    key={task.id}
+                    layout
+                    initial={{ opacity: 0, x: -50, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 50, transition: { duration: 0.2 } }}
+                    className="flex items-center gap-4 rounded-xl border border-l-2 border-white/5 border-l-lime-300/50 bg-[#0A0A0B]/80 p-3 shadow-2xl backdrop-blur-xl"
+                  >
                     <div className="relative shrink-0">
                       {task.status === 'processing' ? (
                         <Loader2 className="h-4 w-4 animate-spin text-lime-300" />
@@ -3701,20 +3432,33 @@ ${textPreview}`
                       </div>
                       <p className="truncate text-xs text-zinc-100">{task.action}</p>
                       {task.result && (
-                        <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-1 text-[10px] leading-tight text-zinc-400">
+                        <motion.p
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-1 text-[10px] leading-tight text-zinc-400"
+                        >
                           {task.result}
                         </motion.p>
                       )}
                     </div>
 
                     {task.htmlPreviewData && task.htmlPreviewFilename && (
-                      <a href={task.htmlPreviewData} target="_blank" rel="noreferrer" className="pointer-events-auto rounded-lg border border-lime-300/20 p-2 text-lime-200 hover:bg-lime-300/10">
+                      <a
+                        href={task.htmlPreviewData}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="pointer-events-auto rounded-lg border border-lime-300/20 p-2 text-lime-200 hover:bg-lime-300/10"
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     )}
 
                     {task.downloadData && task.downloadFilename && (
-                      <a href={task.downloadData} download={task.downloadFilename} className="pointer-events-auto rounded-lg border border-lime-300/20 p-2 text-lime-200 hover:bg-lime-300/10">
+                      <a
+                        href={task.downloadData}
+                        download={task.downloadFilename}
+                        className="pointer-events-auto rounded-lg border border-lime-300/20 p-2 text-lime-200 hover:bg-lime-300/10"
+                      >
                         <Download className="h-4 w-4" />
                       </a>
                     )}
@@ -3725,21 +3469,41 @@ ${textPreview}`
 
             <div className="pointer-events-auto flex flex-col items-center justify-center gap-4">
               <div className="flex items-center justify-center gap-8">
-                <button onClick={() => setIsMuted(p => !p)} className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
-                  isMuted ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
-                }`}>
+                <button
+                  onClick={() => setIsMuted(p => !p)}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                    isMuted ? 'border-red-500/30 bg-red-500/10 text-red-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
+                  }`}
+                >
                   {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                 </button>
 
                 {!isActive ? (
-                  <StartIconMicVisualizer isActive={false} connecting={connecting} isMuted={isMuted} micLevel={0} micBands={micBands} onClick={() => startSession()} />
+                  <StartIconMicVisualizer
+                    isActive={false}
+                    connecting={connecting}
+                    isMuted={isMuted}
+                    micLevel={0}
+                    micBands={micBands}
+                    onClick={startSession}
+                  />
                 ) : (
-                  <StartIconMicVisualizer isActive={true} connecting={connecting} isMuted={isMuted} micLevel={micLevel} micBands={micBands} onClick={stopSession} />
+                  <StartIconMicVisualizer
+                    isActive={true}
+                    connecting={connecting}
+                    isMuted={isMuted}
+                    micLevel={micLevel}
+                    micBands={micBands}
+                    onClick={stopSession}
+                  />
                 )}
 
-                <button onClick={() => toggleVideo()} className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
-                  isVideoEnabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
-                }`}>
+                <button
+                  onClick={() => toggleVideo()}
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+                    isVideoEnabled ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-white/10 bg-[#0A0A0B] text-zinc-400 hover:border-white/30 hover:text-white'
+                  }`}
+                >
                   {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
                 </button>
               </div>
@@ -3751,12 +3515,19 @@ ${textPreview}`
       <AnimatePresence>
         {showSidebar && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSidebar(false)} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed bottom-0 left-0 top-0 z-[101] flex w-96 max-w-[88vw] flex-col border-r border-white/10 bg-[#0A0A0B] shadow-2xl">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setShowSidebar(false)}
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 top-0 z-[101] flex w-96 max-w-[88vw] flex-col border-r border-white/10 bg-[#0A0A0B] shadow-2xl"
+            >
               <div className="flex items-center justify-between border-b border-white/10 p-6">
                 <div>
                   <h2 className="text-sm font-bold uppercase tracking-widest text-white">Office History</h2>
-                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Live transcription & saved records</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">Saved conversation records</p>
                 </div>
                 <button onClick={() => setShowSidebar(false)} className="-mr-2 rounded-xl p-2 text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
                   <X className="h-5 w-5" />
@@ -3764,61 +3535,46 @@ ${textPreview}`
               </div>
 
               <div className="grid grid-cols-2 gap-3 border-b border-white/10 p-4">
-                <button onClick={() => fileInputRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-lime-300/20 bg-lime-300/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-lime-300/20 bg-lime-300/10 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15"
+                >
                   <Paperclip className="h-4 w-4" />
                   Attach
                 </button>
 
-                <button onClick={() => setChatInput('Build ')} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-200 transition hover:bg-white/10">
+                <button
+                  onClick={() => setChatInput('Build ')}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-zinc-200 transition hover:bg-white/10"
+                >
                   <Code2 className="h-4 w-4" />
                   Build
                 </button>
               </div>
 
-              {localFiles.length > 0 && (
-                <div className="border-b border-white/10 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Local uploads</span>
-                    <span className="font-mono text-[9px] text-zinc-600">{localFiles.length}</span>
-                  </div>
-                  <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                    {localFiles.map(file => (
-                      <div key={file.id} className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-                        <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-lime-200">
-                          <AttachmentIcon kind={file.kind} />
-                          <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                          <span className="shrink-0 text-zinc-500">{formatFileSize(file.size)}</span>
-                        </div>
-
-                        {file.kind === 'image' && <img src={file.dataUrl} alt={file.name} className="max-h-40 w-full object-cover" />}
-                        {file.kind === 'audio' && <div className="px-3 pb-3"><audio src={file.dataUrl} controls className="w-full" /></div>}
-                        {file.kind === 'video' && <video src={file.dataUrl} controls playsInline className="max-h-44 w-full bg-black" />}
-
-                        <a href={file.dataUrl} download={file.name} className="flex w-full items-center justify-center gap-2 border-t border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/10">
-                          <Download className="h-3.5 w-3.5" />
-                          Download
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="flex min-h-0 flex-1 flex-col">
-                <div ref={chatScrollRef} className="flex-1 space-y-3 overflow-y-auto p-4 pb-3">
-                  {chatMessagesWithStreaming.map((msg, i) => (
-                    <div key={`${msg.timestamp}-${i}-${msg.streaming ? 'streaming' : 'saved'}`} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <span className="mb-1 flex items-center gap-2 text-[8px] uppercase tracking-widest text-zinc-600">
+                <div className="flex-1 space-y-3 overflow-y-auto p-4 pb-3">
+                  {historyMsgs.map((msg, i) => (
+                    <div key={`${msg.timestamp}-${i}`} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <span className="mb-1 text-[8px] uppercase tracking-widest text-zinc-600">
                         {msg.role === 'user' ? settings.userName : settings.agentName}
-                        {msg.streaming && <span className={`rounded-full border px-1.5 py-0.5 text-[7px] ${msg.role === 'user' ? 'border-sky-400/30 text-sky-300' : 'border-lime-300/30 text-lime-300'}`}>Live</span>}
                       </span>
 
                       <div className={`max-w-[92%] rounded-2xl p-3 text-xs leading-relaxed ${
                         msg.role === 'user'
                           ? 'rounded-tr-sm border border-sky-400/20 bg-sky-400/10 text-sky-100'
                           : 'rounded-tl-sm border border-lime-300/10 bg-white/5 text-zinc-300'
-                      } ${msg.streaming ? 'animate-pulse' : ''}`}>
-                        <ChatAttachmentPreview msg={msg} />
+                      }`}>
+                        {msg.fileName && (
+                          <div className="mb-2 flex items-center gap-2 rounded-xl bg-black/30 px-2 py-1 text-[10px] text-lime-200">
+                            <Upload className="h-3 w-3" />
+                            {msg.fileName}
+                          </div>
+                        )}
+                        
+                        {msg.previewData && (
+                          <img src={msg.previewData} alt="Attached" className="mb-2 mt-1 max-h-40 w-auto rounded-lg border border-white/10 object-contain shadow-sm" />
+                        )}
 
                         {msg.toolName && (
                           <div className="mb-2 flex items-center gap-2 rounded-xl bg-lime-300/10 px-2 py-1 text-[10px] text-lime-200">
@@ -3831,12 +3587,21 @@ ${textPreview}`
 
                         {msg.htmlPreviewData && msg.htmlPreviewFilename && (
                           <div className="mt-3 grid grid-cols-1 gap-2">
-                            <a href={msg.htmlPreviewData} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-lime-300/20 bg-lime-300/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15">
+                            <a
+                              href={msg.htmlPreviewData}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex w-full items-center justify-center gap-2 rounded-xl border border-lime-300/20 bg-lime-300/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15"
+                            >
                               <ExternalLink className="h-3.5 w-3.5" />
                               Open HTML Preview
                             </a>
 
-                            <a href={msg.htmlPreviewData} download={msg.htmlPreviewFilename} className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-200 transition hover:bg-white/10">
+                            <a
+                              href={msg.htmlPreviewData}
+                              download={msg.htmlPreviewFilename}
+                              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-200 transition hover:bg-white/10"
+                            >
                               <Download className="h-3.5 w-3.5" />
                               Download HTML
                             </a>
@@ -3844,7 +3609,11 @@ ${textPreview}`
                         )}
 
                         {msg.downloadData && msg.downloadFilename && (
-                          <a href={msg.downloadData} download={msg.downloadFilename} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-lime-300/20 bg-lime-300/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15">
+                          <a
+                            href={msg.downloadData}
+                            download={msg.downloadFilename}
+                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-lime-300/20 bg-lime-300/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-lime-200 transition hover:bg-lime-300/15"
+                          >
                             <Download className="h-3.5 w-3.5" />
                             Download Result
                           </a>
@@ -3853,22 +3622,39 @@ ${textPreview}`
                     </div>
                   ))}
 
-                  {chatMessagesWithStreaming.length === 0 && (
+                  {historyMsgs.length === 0 && (
                     <div className="py-10 text-center text-[10px] font-bold uppercase tracking-widest text-zinc-600">
                       No Office History Yet
                     </div>
                   )}
                 </div>
 
-                <form onSubmit={sendChatMessage} className="border-t border-white/10 bg-[#070807]/95 p-3 backdrop-blur-xl">
+                <form
+                  onSubmit={sendChatMessage}
+                  className="border-t border-white/10 bg-[#070807]/95 p-3 backdrop-blur-xl"
+                >
                   <div className="flex items-center gap-2 rounded-2xl border border-lime-300/15 bg-black/45 p-2 shadow-2xl">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition hover:border-lime-300/30 hover:text-lime-200">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition hover:border-lime-300/30 hover:text-lime-200"
+                    >
                       <Paperclip className="h-4 w-4" />
                     </button>
 
-                    <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder={`Message ${settings.agentName}...`} className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-zinc-600" style={{ fontFamily: 'Roboto, system-ui, sans-serif' }} />
+                    <input
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder={`Message ${settings.agentName}...`}
+                      className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-zinc-600"
+                      style={{ fontFamily: 'Roboto, system-ui, sans-serif' }}
+                    />
 
-                    <button type="submit" disabled={!chatInput.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime-300 text-black transition hover:bg-lime-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40">
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim()}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime-300 text-black transition hover:bg-lime-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
                       <Send className="h-4 w-4" />
                     </button>
                   </div>
@@ -3881,9 +3667,13 @@ ${textPreview}`
 
       <AnimatePresence>
         {showProfile && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#050505]">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#050505]"
+          >
             <div className="sticky top-0 z-10 mx-auto flex w-full max-w-2xl items-center justify-between border-b border-white/10 bg-[#050505]/80 p-6 backdrop-blur-xl">
               <h2 className="text-sm font-bold uppercase tracking-widest text-white">Office Profile</h2>
+
               <button onClick={() => setShowProfile(false)} className="rounded-xl bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white">
                 <X className="h-5 w-5" />
               </button>
@@ -3897,11 +3687,9 @@ ${textPreview}`
                   ) : (
                     <div className="text-4xl font-bold text-zinc-700">{settings.userName?.[0] || 'U'}</div>
                   )}
-
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
                     <Camera className="h-8 w-8 text-white drop-shadow-md" />
                   </div>
-
                   <input
                     type="file"
                     accept="image/*"
@@ -3947,7 +3735,13 @@ ${textPreview}`
                     <UserRound className="h-3.5 w-3.5" />
                     How should Beatrice address you?
                   </label>
-                  <input type="text" value={settings.userName} onChange={(e) => setSettings(s => ({ ...s, userName: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50" placeholder="e.g. Jo Lernout" />
+                  <input
+                    type="text"
+                    value={settings.userName}
+                    onChange={(e) => setSettings(s => ({ ...s, userName: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                    placeholder="e.g. Jo Lernout"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -3955,12 +3749,22 @@ ${textPreview}`
                     <Bot className="h-3.5 w-3.5" />
                     Persona Name
                   </label>
-                  <input type="text" value={settings.agentName} onChange={(e) => setSettings(s => ({ ...s, agentName: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50" placeholder="e.g. Beatrice" />
+                  <input
+                    type="text"
+                    value={settings.agentName}
+                    onChange={(e) => setSettings(s => ({ ...s, agentName: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-xl font-medium text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                    placeholder="e.g. Beatrice"
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Voice Alias</label>
-                  <select value={settings.selectedVoice} onChange={(e) => setSettings(s => ({ ...s, selectedVoice: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-sm text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50">
+                  <select
+                    value={settings.selectedVoice}
+                    onChange={(e) => setSettings(s => ({ ...s, selectedVoice: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#0A0A0B] p-4 text-sm text-white outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                  >
                     {GEMINI_LIVE_VOICE_OPTIONS.map(v => (
                       <option key={v.id} value={v.id}>
                         {v.alias} — {v.vibe}
@@ -3971,7 +3775,12 @@ ${textPreview}`
 
                 <div className="flex flex-1 flex-col space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Default Persona Instructions</label>
-                  <textarea value={settings.personality} onChange={(e) => setSettings(s => ({ ...s, personality: e.target.value }))} className="min-h-[340px] w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0B] p-4 font-mono text-xs leading-relaxed text-zinc-300 outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50" placeholder="Describe how the agent should behave..." />
+                  <textarea
+                    value={settings.personality}
+                    onChange={(e) => setSettings(s => ({ ...s, personality: e.target.value }))}
+                    className="min-h-[340px] w-full resize-y rounded-xl border border-white/10 bg-[#0A0A0B] p-4 font-mono text-xs leading-relaxed text-zinc-300 outline-none transition-all focus:border-lime-300/50 focus:ring-1 focus:ring-lime-300/50"
+                    placeholder="Describe how the agent should behave..."
+                  />
                   <p className="text-[10px] leading-relaxed text-zinc-600">
                     The hidden office-behavior prompt stays applied behind this editable persona.
                   </p>
@@ -3984,7 +3793,10 @@ ${textPreview}`
                 <button onClick={onLogout} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-xs font-bold uppercase tracking-widest text-red-500 transition-all hover:bg-red-500/20 active:scale-95">
                   <LogOut className="h-4 w-4" /> Logout
                 </button>
-                <button onClick={persistSettings} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-lime-300 px-4 py-3 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-lime-200 active:scale-95">
+                <button
+                  onClick={persistSettings}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-lime-300 px-4 py-3 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-lime-200 active:scale-95"
+                >
                   <Save className="h-4 w-4" /> Save
                 </button>
               </div>
